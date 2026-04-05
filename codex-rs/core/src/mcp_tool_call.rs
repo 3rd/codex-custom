@@ -46,6 +46,7 @@ use codex_mcp::mcp_permission_prompt_is_auto_approved;
 use codex_otel::sanitize_metric_tag_value;
 use codex_protocol::mcp::CallToolResult;
 use codex_protocol::openai_models::InputModality;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::McpInvocation;
 use codex_protocol::protocol::McpToolCallBeginEvent;
@@ -836,6 +837,9 @@ async fn maybe_request_mcp_tool_approval(
     }
 
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
+    if should_skip_default_custom_mcp_approval(invocation, approval_mode, annotations) {
+        return None;
+    }
     let approval_required = requires_mcp_tool_approval(annotations);
     if !approval_required && approval_mode != AppToolApproval::Prompt {
         return None;
@@ -864,6 +868,10 @@ async fn maybe_request_mcp_tool_approval(
                 ));
             }
         }
+    }
+
+    if matches!(turn_context.approval_policy.value(), AskForApproval::Never) {
+        return Some(McpToolApprovalDecision::Decline { message: None });
     }
 
     let session_approval_key = session_mcp_tool_approval_key(invocation, metadata, approval_mode);
@@ -1033,6 +1041,20 @@ async fn maybe_monitor_auto_approved_mcp_tool_call(
         mcp_tool_approval_callsite_mode(approval_mode, turn_context),
     )
     .await
+}
+
+fn should_skip_default_custom_mcp_approval(
+    invocation: &McpInvocation,
+    approval_mode: AppToolApproval,
+    annotations: Option<&ToolAnnotations>,
+) -> bool {
+    invocation.server != CODEX_APPS_MCP_SERVER_NAME
+        && approval_mode == AppToolApproval::Auto
+        && annotations.is_none_or(|annotations| {
+            annotations.destructive_hint.is_none()
+                && annotations.read_only_hint.is_none()
+                && annotations.open_world_hint.is_none()
+        })
 }
 
 fn prepare_arc_request_action(
