@@ -69,6 +69,7 @@
               rust
               pkgs.pkg-config
               pkgs.openssl
+              pkgs.libcap
               pkgs.cmake
               pkgs.llvmPackages.clang
               pkgs.llvmPackages.libclang.lib
