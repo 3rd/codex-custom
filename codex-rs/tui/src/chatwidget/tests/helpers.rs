@@ -186,6 +186,7 @@ pub(super) async fn make_chatwidget_manual(
         .service_tier
         .as_deref()
         .and_then(ServiceTier::from_request_value);
+    let non_danger_permissions = DangerModePermissions::from_chat_config(&cfg);
     let mut widget = ChatWidget {
         app_event_tx,
         codex_op_target: super::CodexOpTarget::Direct(op_tx),
@@ -197,6 +198,8 @@ pub(super) async fn make_chatwidget_manual(
         effective_service_tier,
         current_collaboration_mode,
         active_collaboration_mask,
+        danger_mode_active: false,
+        non_danger_permissions,
         has_chatgpt_account: false,
         model_catalog,
         session_telemetry,

@@ -1296,15 +1296,58 @@ async fn collab_mode_shift_tab_cycles_only_when_idle() {
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert_eq!(chat.current_collaboration_mode(), &initial);
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::OnRequest
+    );
 
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
     assert_eq!(chat.current_collaboration_mode(), &initial);
+    assert_eq!(chat.collaboration_mode_label(), Some("Danger"));
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::Never
+    );
+    assert_eq!(
+        chat.config.permissions.permission_profile(),
+        PermissionProfile::Disabled
+    );
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
+    assert_eq!(chat.current_collaboration_mode(), &initial);
+    assert_eq!(chat.collaboration_mode_label(), Some("Default"));
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::OnRequest
+    );
 
     chat.on_task_started();
-    let before = chat.active_collaboration_mode_kind();
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-    assert_eq!(chat.active_collaboration_mode_kind(), before);
+    assert_eq!(chat.collaboration_mode_label(), Some("Danger"));
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::Never
+    );
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+    assert_eq!(chat.collaboration_mode_label(), Some("Default"));
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::OnRequest
+    );
+
+    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
+        .expect("expected plan collaboration mode");
+    chat.set_collaboration_mask(plan_mask);
+    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+    assert_eq!(chat.collaboration_mode_label(), Some("Plan"));
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::OnRequest
+    );
 }
 
 #[tokio::test]

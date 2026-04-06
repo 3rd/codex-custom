@@ -206,6 +206,7 @@ use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
+use crate::style::danger_user_message_style;
 use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::models::local_image_label_text;
@@ -4522,7 +4523,12 @@ impl ChatComposer {
         mask_char: Option<char>,
     ) {
         let is_zellij = self.is_zellij;
-        let style = user_message_style();
+        let style = if self.collaboration_mode_indicator == Some(CollaborationModeIndicator::Danger)
+        {
+            danger_user_message_style()
+        } else {
+            user_message_style()
+        };
         let textarea_style = style.fg(ratatui::style::Color::Reset);
         Block::default().style(style).render_ref(composer_rect, buf);
         if !remote_images_rect.is_empty() {
@@ -4714,6 +4720,30 @@ mod tests {
             spacing_row.trim(),
             "",
             "expected blank spacing row above hints but saw: {spacing_row:?}",
+        );
+    }
+
+    #[test]
+    fn danger_mode_uses_danger_background() {
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            /*has_input_focus*/ true,
+            sender,
+            /*enhanced_keys_supported*/ false,
+            "Ask Codex to do anything".to_string(),
+            /*disable_paste_burst*/ false,
+        );
+        composer.set_collaboration_modes_enabled(/*enabled*/ true);
+        composer.set_collaboration_mode_indicator(Some(CollaborationModeIndicator::Danger));
+
+        let area = Rect::new(0, 0, 40, 6);
+        let mut buf = Buffer::empty(area);
+        composer.render(area, &mut buf);
+
+        assert_eq!(
+            buf[(0, 0)].bg,
+            crate::style::danger_user_message_style().bg.unwrap()
         );
     }
 
@@ -5272,6 +5302,32 @@ mod tests {
             },
         );
 
+        // Empty textarea, danger mode idle: shortcuts hint and cycle hint are available.
+        snapshot_composer_state_with_width(
+            "footer_collapse_danger_empty_mode_cycle_with_context",
+            /*width*/ 60,
+            /*enhanced_keys_supported*/ true,
+            |composer| {
+                setup_collab_footer(
+                    composer,
+                    /*context_percent*/ 100,
+                    Some(CollaborationModeIndicator::Danger),
+                );
+            },
+        );
+        snapshot_composer_state_with_width(
+            "footer_collapse_danger_empty_mode_only",
+            /*width*/ 26,
+            /*enhanced_keys_supported*/ true,
+            |composer| {
+                setup_collab_footer(
+                    composer,
+                    /*context_percent*/ 100,
+                    Some(CollaborationModeIndicator::Danger),
+                );
+            },
+        );
+
         // Textarea has content, agent running: queue hint is shown.
         snapshot_composer_state_with_width(
             "footer_collapse_queue_full",
@@ -5400,6 +5456,36 @@ mod tests {
                     composer,
                     /*context_percent*/ 98,
                     Some(CollaborationModeIndicator::Plan),
+                );
+                composer.set_task_running(/*running*/ true);
+                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
+            },
+        );
+
+        // Textarea has content, danger mode active, agent running: queue hint + mode.
+        snapshot_composer_state_with_width(
+            "footer_collapse_danger_queue_short_with_context",
+            /*width*/ 50,
+            /*enhanced_keys_supported*/ true,
+            |composer| {
+                setup_collab_footer(
+                    composer,
+                    /*context_percent*/ 98,
+                    Some(CollaborationModeIndicator::Danger),
+                );
+                composer.set_task_running(/*running*/ true);
+                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
+            },
+        );
+        snapshot_composer_state_with_width(
+            "footer_collapse_danger_queue_mode_only",
+            /*width*/ 20,
+            /*enhanced_keys_supported*/ true,
+            |composer| {
+                setup_collab_footer(
+                    composer,
+                    /*context_percent*/ 98,
+                    Some(CollaborationModeIndicator::Danger),
                 );
                 composer.set_task_running(/*running*/ true);
                 composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());

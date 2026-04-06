@@ -768,6 +768,8 @@ pub(crate) struct ChatWidget {
     current_collaboration_mode: CollaborationMode,
     /// The currently active collaboration mask, if any.
     active_collaboration_mask: Option<CollaborationModeMask>,
+    danger_mode_active: bool,
+    non_danger_permissions: DangerModePermissions,
     has_chatgpt_account: bool,
     model_catalog: Arc<ModelCatalog>,
     session_telemetry: SessionTelemetry,
@@ -1172,8 +1174,35 @@ pub(crate) struct ThreadInputState {
     user_turn_pending_start: bool,
     current_collaboration_mode: CollaborationMode,
     active_collaboration_mask: Option<CollaborationModeMask>,
+    danger_mode_active: bool,
+    non_danger_permissions: DangerModePermissions,
     task_running: bool,
     agent_turn_running: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DangerModePermissions {
+    approval_policy: AskForApproval,
+    approvals_reviewer: ApprovalsReviewer,
+    permission_profile: PermissionProfile,
+}
+
+impl DangerModePermissions {
+    fn from_chat_config(config: &Config) -> Self {
+        Self {
+            approval_policy: config.permissions.approval_policy.value(),
+            approvals_reviewer: config.approvals_reviewer,
+            permission_profile: config.permissions.permission_profile(),
+        }
+    }
+
+    fn full_access() -> Self {
+        Self {
+            approval_policy: AskForApproval::Never,
+            approvals_reviewer: ApprovalsReviewer::User,
+            permission_profile: PermissionProfile::Disabled,
+        }
+    }
 }
 
 impl From<String> for UserMessage {
@@ -2100,6 +2129,9 @@ impl ChatWidget {
                 session.active_permission_profile.clone();
         }
         self.config.approvals_reviewer = session.approvals_reviewer;
+        if !self.danger_mode_active {
+            self.non_danger_permissions = DangerModePermissions::from_chat_config(&self.config);
+        }
         self.status_line_project_root_name_cache = None;
         let forked_from_id = session.forked_from_id;
         let model_for_header = session.model.clone();
@@ -3313,6 +3345,8 @@ impl ChatWidget {
             user_turn_pending_start: self.user_turn_pending_start,
             current_collaboration_mode: self.current_collaboration_mode.clone(),
             active_collaboration_mask: self.active_collaboration_mask.clone(),
+            danger_mode_active: self.danger_mode_active,
+            non_danger_permissions: self.non_danger_permissions.clone(),
             task_running: self.bottom_pane.is_task_running(),
             agent_turn_running: self.agent_turn_running,
         })
@@ -3323,6 +3357,8 @@ impl ChatWidget {
         if let Some(input_state) = input_state {
             self.current_collaboration_mode = input_state.current_collaboration_mode;
             self.active_collaboration_mask = input_state.active_collaboration_mask;
+            self.danger_mode_active = input_state.danger_mode_active;
+            self.non_danger_permissions = input_state.non_danger_permissions;
             self.agent_turn_running = input_state.agent_turn_running;
             self.goal_status_active_turn_started_at =
                 self.agent_turn_running.then_some(Instant::now());
@@ -4888,6 +4924,7 @@ impl ChatWidget {
             mode: ModeKind::Default,
             settings: fallback_default,
         };
+        let non_danger_permissions = DangerModePermissions::from_chat_config(&config);
 
         let active_cell = Some(Self::placeholder_session_header_cell(&config));
 
@@ -4934,6 +4971,8 @@ impl ChatWidget {
             skills_initial_state: None,
             current_collaboration_mode,
             active_collaboration_mask,
+            danger_mode_active: false,
+            non_danger_permissions,
             has_chatgpt_account,
             model_catalog,
             session_telemetry,
@@ -5253,10 +5292,9 @@ impl ChatWidget {
                 kind: KeyEventKind::Press,
                 ..
             } if self.collaboration_modes_enabled()
-                && !self.bottom_pane.is_task_running()
                 && self.bottom_pane.no_modal_or_popup_active() =>
             {
-                self.cycle_collaboration_mode();
+                self.handle_backtab_mode_toggle();
                 self.refresh_plan_mode_nudge();
             }
             _ => {
@@ -9129,6 +9167,7 @@ impl ChatWidget {
         {
             tracing::warn!(%err, "failed to set approval_policy on chat config");
         }
+        self.sync_non_danger_permissions();
     }
 
     /// Set the permission profile in the widget's config copy.
@@ -9137,7 +9176,9 @@ impl ChatWidget {
         &mut self,
         profile: PermissionProfile,
     ) -> ConstraintResult<()> {
-        self.config.permissions.set_permission_profile(profile)
+        self.config.permissions.set_permission_profile(profile)?;
+        self.sync_non_danger_permissions();
+        Ok(())
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -9218,6 +9259,7 @@ impl ChatWidget {
 
     pub(crate) fn set_approvals_reviewer(&mut self, policy: ApprovalsReviewer) {
         self.config.approvals_reviewer = policy;
+        self.sync_non_danger_permissions();
     }
 
     pub(crate) fn set_full_access_warning_acknowledged(&mut self, acknowledged: bool) {
@@ -9672,6 +9714,9 @@ impl ChatWidget {
         if !self.collaboration_modes_enabled() {
             return None;
         }
+        if self.danger_mode_active {
+            return Some("Danger");
+        }
         let active_mode = self.active_mode_kind();
         active_mode
             .is_tui_visible()
@@ -9681,6 +9726,9 @@ impl ChatWidget {
     fn collaboration_mode_indicator(&self) -> Option<CollaborationModeIndicator> {
         if !self.collaboration_modes_enabled() {
             return None;
+        }
+        if self.danger_mode_active {
+            return Some(CollaborationModeIndicator::Danger);
         }
         match self.active_mode_kind() {
             ModeKind::Plan => Some(CollaborationModeIndicator::Plan),
@@ -9757,18 +9805,202 @@ impl ChatWidget {
         }
     }
 
-    /// Cycle to the next collaboration mode variant (Plan -> Default -> Plan).
-    fn cycle_collaboration_mode(&mut self) {
+    fn handle_backtab_mode_toggle(&mut self) {
         if !self.collaboration_modes_enabled() {
             return;
         }
 
-        if let Some(next_mask) = collaboration_modes::next_mask(
-            self.model_catalog.as_ref(),
-            self.active_collaboration_mask.as_ref(),
-        ) {
-            self.set_collaboration_mask(next_mask);
+        if self.bottom_pane.is_task_running() {
+            match (self.active_mode_kind(), self.danger_mode_active) {
+                (ModeKind::Plan, _) => {}
+                (_, true) => self.exit_danger_mode(),
+                (ModeKind::Default, false) => self.enter_danger_mode(),
+                (ModeKind::PairProgramming | ModeKind::Execute, false) => {}
+            }
+            return;
         }
+
+        if self.danger_mode_active {
+            self.exit_danger_mode();
+            return;
+        }
+
+        match self.active_mode_kind() {
+            ModeKind::Default => {
+                if let Some(plan_mask) = collaboration_modes::plan_mask(self.model_catalog.as_ref())
+                {
+                    self.set_collaboration_mask(plan_mask);
+                }
+            }
+            ModeKind::Plan => {
+                if let Some(default_mask) =
+                    collaboration_modes::default_mask(self.model_catalog.as_ref())
+                {
+                    self.set_collaboration_mask(default_mask);
+                }
+                self.enter_danger_mode();
+            }
+            ModeKind::PairProgramming | ModeKind::Execute => {}
+        }
+    }
+
+    fn current_permissions(&self) -> DangerModePermissions {
+        DangerModePermissions::from_chat_config(&self.config)
+    }
+
+    fn sync_non_danger_permissions(&mut self) {
+        if self.danger_mode_active {
+            return;
+        }
+        self.non_danger_permissions = self.current_permissions();
+    }
+
+    fn enter_danger_mode(&mut self) {
+        if self.danger_mode_active {
+            return;
+        }
+
+        self.non_danger_permissions = self.current_permissions();
+        self.try_apply_danger_mode_permissions(
+            DangerModePermissions::full_access(),
+            "Full Access",
+            /*danger_mode_active*/ true,
+        );
+    }
+
+    fn exit_danger_mode(&mut self) {
+        if !self.danger_mode_active {
+            return;
+        }
+
+        let label = self.permissions_label(&self.non_danger_permissions);
+        self.try_apply_danger_mode_permissions(
+            self.non_danger_permissions.clone(),
+            label,
+            /*danger_mode_active*/ false,
+        );
+    }
+
+    fn permissions_label(&self, permissions: &DangerModePermissions) -> &'static str {
+        if permissions.approval_policy == AskForApproval::Never
+            && matches!(permissions.permission_profile, PermissionProfile::Disabled)
+        {
+            return "Full Access";
+        }
+
+        if permissions.approval_policy == AskForApproval::OnRequest {
+            let file_system_policy = permissions.permission_profile.file_system_sandbox_policy();
+            if permissions.approvals_reviewer == ApprovalsReviewer::AutoReview
+                && matches!(
+                    permissions.permission_profile,
+                    PermissionProfile::Managed { .. }
+                )
+                && file_system_policy
+                    .can_write_path_with_cwd(self.config.cwd.as_path(), self.config.cwd.as_path())
+                && !file_system_policy.has_full_disk_write_access()
+            {
+                return "Auto-review";
+            }
+            if matches!(
+                permissions.permission_profile,
+                PermissionProfile::Managed { .. }
+            ) && !file_system_policy.has_full_disk_write_access()
+                && file_system_policy
+                    .get_writable_roots_with_cwd(self.config.cwd.as_path())
+                    .is_empty()
+            {
+                return "Read Only";
+            }
+            if matches!(
+                permissions.permission_profile,
+                PermissionProfile::Managed { .. }
+            ) && file_system_policy
+                .can_write_path_with_cwd(self.config.cwd.as_path(), self.config.cwd.as_path())
+                && !file_system_policy.has_full_disk_write_access()
+            {
+                return "Default";
+            }
+        }
+
+        "Custom"
+    }
+
+    fn try_apply_danger_mode_permissions(
+        &mut self,
+        permissions: DangerModePermissions,
+        label: &str,
+        danger_mode_active: bool,
+    ) {
+        if let Err(err) = self
+            .config
+            .permissions
+            .approval_policy
+            .can_set(&permissions.approval_policy)
+        {
+            self.add_error_message(format!("Failed to set approval policy: {err}"));
+            return;
+        }
+        if let Err(err) = self
+            .config
+            .permissions
+            .permission_profile
+            .can_set(&permissions.permission_profile)
+        {
+            self.add_error_message(format!("Failed to set permission profile: {err}"));
+            return;
+        }
+
+        self.danger_mode_active = danger_mode_active;
+        self.config.approvals_reviewer = permissions.approvals_reviewer;
+        if let Err(err) = self
+            .config
+            .permissions
+            .approval_policy
+            .set(permissions.approval_policy)
+        {
+            tracing::warn!(%err, "failed to set approval_policy on chat config");
+        }
+        if let Err(err) = self
+            .config
+            .permissions
+            .set_permission_profile(permissions.permission_profile.clone())
+        {
+            tracing::warn!(%err, "failed to set permission_profile on chat config");
+        }
+        if !danger_mode_active {
+            self.non_danger_permissions = permissions.clone();
+        }
+
+        self.submit_op(AppCommand::override_turn_context(
+            /*cwd*/ None,
+            Some(permissions.approval_policy),
+            Some(permissions.approvals_reviewer),
+            Some(permissions.permission_profile.clone()),
+            /*windows_sandbox_level*/ None,
+            /*model*/ None,
+            /*effort*/ None,
+            /*summary*/ None,
+            /*service_tier*/ None,
+            /*collaboration_mode*/ None,
+            /*personality*/ None,
+        ));
+        self.app_event_tx.send(AppEvent::UpdateAskForApprovalPolicy(
+            permissions.approval_policy,
+        ));
+        self.app_event_tx.send(AppEvent::UpdatePermissionProfile(
+            permissions.permission_profile,
+        ));
+        self.app_event_tx.send(AppEvent::UpdateApprovalsReviewer(
+            permissions.approvals_reviewer,
+        ));
+        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+            history_cell::new_info_event(
+                format!("Permissions updated to {label}"),
+                /*hint*/ None,
+            ),
+        )));
+        self.update_collaboration_mode_indicator();
+        self.request_redraw();
     }
 
     /// Update the active collaboration mask.
