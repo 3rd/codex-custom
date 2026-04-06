@@ -9,6 +9,10 @@ pub fn user_message_style() -> Style {
     user_message_style_for(default_bg())
 }
 
+pub fn danger_user_message_style() -> Style {
+    danger_user_message_style_for(default_bg())
+}
+
 pub fn proposed_plan_style() -> Style {
     proposed_plan_style_for(default_bg())
 }
@@ -28,6 +32,13 @@ pub fn proposed_plan_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
     }
 }
 
+pub fn danger_user_message_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
+    match terminal_bg {
+        Some(bg) => Style::default().bg(danger_user_message_bg(bg)),
+        None => Style::default().bg(best_color((96, 24, 24))),
+    }
+}
+
 #[allow(clippy::disallowed_methods)]
 pub fn user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
     let (top, alpha) = if is_light(terminal_bg) {
@@ -41,4 +52,14 @@ pub fn user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
 #[allow(clippy::disallowed_methods)]
 pub fn proposed_plan_bg(terminal_bg: (u8, u8, u8)) -> Color {
     user_message_bg(terminal_bg)
+}
+
+#[allow(clippy::disallowed_methods)]
+pub fn danger_user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
+    let (top, alpha) = if is_light(terminal_bg) {
+        ((122, 34, 34), 0.18)
+    } else {
+        ((160, 48, 48), 0.32)
+    };
+    best_color(blend(top, terminal_bg, alpha))
 }

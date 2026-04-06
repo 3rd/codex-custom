@@ -1,3 +1,69 @@
+# Custom Fork Workflow
+
+This checkout is not a generic `codex` clone. It is a fork workspace for carrying local Codex CLI patches on top of upstream.
+
+- Treat `main` as a clean mirror of `openai/main`.
+- Treat `custom` as the only long-lived branch for local patches.
+- Do not land custom work on `main`. The root `Makefile` will fast-forward `main` to upstream and push that mirror to `origin/main`.
+- Use the root `Makefile` as the source of truth for repo operations:
+  - `make sync-main`: ensure the `openai` remote exists and points at `https://github.com/openai/codex.git`, fetch `openai/main`, fast-forward local `main`, then push it to `origin/main`. It refuses to move `main` if local `main` contains commits not present in upstream, or if `main` is checked out and dirty.
+  - `make rebase-custom`: run only from `custom`. It autostashes tracked and untracked changes, rebases `custom` onto local `main`, then restores the stash on success. If the rebase fails, resolve conflicts manually and the autostash is left in `git stash`.
+  - `make sync` or `make update-custom`: the normal refresh flow. Sync `main` from upstream, then rebase `custom` on top.
+  - `make build`: run only from `custom`. It enters `nix develop`, sets `CARGO_HOME=/tmp/codex-custom-cargo-home`, and builds `codex-rs` with `cargo build -p codex-cli --bin codex --profile local-release`.
+  - `make install`: build and install the custom binary to `$(HOME)/.local/bin/codex` by default. Override `PREFIX` or `BIN_DIR` if needed.
+- `codex-rs/Cargo.toml` defines `profile.local-release` specifically for this fork. It keeps release settings but disables LTO and raises codegen units to speed up local custom builds.
+- `flake.nix` adds `libcap` to the dev shell. Prefer the Nix shell for local Linux sandbox builds instead of relying on host packages.
+- Current fork-only behavior lives in `codex-rs/core/src/mcp_tool_call.rs`:
+  - Non-`codex_apps` MCP tools in `approval_mode = "auto"` skip the default approval prompt when tool annotations are missing, or when all three approval hints (`destructive_hint`, `read_only_hint`, `open_world_hint`) are unset.
+  - This patch exists to keep custom/local MCP servers usable even when they do not emit full tool annotations.
+  - If approval flow is still reached while `AskForApproval::Never` is active, the code now declines instead of trying to continue toward a prompt path.
+- Regression coverage for the fork patch lives in `codex-rs/core/src/mcp_tool_call_tests.rs`. If you touch this behavior, rerun focused `codex-core` tests before doing anything broader.
+- When carrying local mods in `codex-rs/tui`:
+  - Prefer TUI-local changes over protocol or app-server surface changes unless the mod truly needs a new cross-process concept.
+  - When a mod spans behavior and rendering, expect to touch state, permission/config plumbing, visible UI, tests, and snapshots together.
+  - Keep the mod’s runtime behavior and visual indicator coupled. If a local mod changes permissions or execution behavior, make sure the UI clearly reflects that state.
+  - Document the owning files and tests here after adding a new mod so future rebases have a short search map.
+- TUI fork-maintenance tips:
+  - This repo’s TUI has strict linting around colors. Do not call `Color::Rgb(...)` directly in normal code paths unless the file already allows it; prefer `best_color(...)` and existing palette helpers.
+  - The TUI snapshot workflow may need `cargo-insta`, but if it is not installed you can still accept intentional snapshot changes with `INSTA_UPDATE=always cargo test -p codex-tui` from `codex-rs`.
+  - A failed snapshot run can leave `*.snap.new` files behind. Review them, accept the intended ones, and delete leftovers before finishing.
+  - `cargo test -p codex-tui` is best run inside `nix develop .` in this fork; plain host Cargo can fail on missing OpenSSL or other shell dependencies.
+
+## How To Operate Here
+
+1. Keep `main` disposable and upstream-aligned.
+2. Do patch work on `custom`.
+3. Refresh with `make sync` before starting a new patch or after upstream moves.
+4. Build with `make build`; install with `make install` only when you want to replace your local `codex` binary.
+5. When patching approval behavior, inspect both `codex-rs/core/src/mcp_tool_call.rs` and `codex-rs/core/src/mcp_tool_call_tests.rs`; this fork already carries behavior that intentionally diverges from upstream.
+6. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
+7. If upstream absorbs either custom patch, remove the fork-specific note here and collapse back to upstream workflow.
+
+## Maintaining Local Mods After Upstream Sync
+
+1. Run `make sync` from `custom`.
+2. If the rebase hits conflicts, check whether upstream touched the same behavior before blindly replaying a fork patch.
+3. Re-validate the MCP patch in:
+   - `codex-rs/core/src/mcp_tool_call.rs`
+   - `codex-rs/core/src/mcp_tool_call_tests.rs`
+4. Re-validate each local TUI mod by finding:
+   - the main behavior file
+   - the visible rendering file
+   - the test files that prove the behavior
+   - the accepted snapshots, if the mod changes user-visible output
+5. Look for upstream changes in the seams that usually break local mods:
+   - state flow and ownership boundaries
+   - permission/config override plumbing
+   - UI rendering and snapshot layouts
+   - keybinding or command-dispatch paths
+6. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
+7. After reapplying or adjusting a local mod, run:
+   - `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`
+   - `nix develop . --command bash -lc 'cd codex-rs && just fmt'`
+   - `nix develop . --command bash -lc 'cd codex-rs && just fix -p codex-tui'`
+8. When a local mod is no longer needed because upstream absorbed it or the workflow changed, remove the patch instead of carrying dead divergence.
+9. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:

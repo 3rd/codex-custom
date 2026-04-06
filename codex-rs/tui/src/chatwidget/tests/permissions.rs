@@ -727,3 +727,38 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
         "expected full access update history message, got: {rendered}"
     );
 }
+
+#[tokio::test]
+async fn danger_mode_restores_guardian_approvals_permissions() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.set_approval_policy(AskForApproval::OnRequest);
+    chat.set_sandbox_policy(SandboxPolicy::new_workspace_write_policy())
+        .expect("workspace-write should be allowed");
+    chat.set_approvals_reviewer(ApprovalsReviewer::GuardianSubagent);
+
+    chat.enter_danger_mode();
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::Never
+    );
+    assert_eq!(
+        chat.config.permissions.sandbox_policy.get(),
+        &SandboxPolicy::DangerFullAccess
+    );
+    assert_eq!(chat.config.approvals_reviewer, ApprovalsReviewer::User);
+
+    chat.exit_danger_mode();
+    assert_eq!(
+        chat.config.permissions.approval_policy.value(),
+        AskForApproval::OnRequest
+    );
+    assert!(matches!(
+        chat.config.permissions.sandbox_policy.get(),
+        SandboxPolicy::WorkspaceWrite { .. }
+    ));
+    assert_eq!(
+        chat.config.approvals_reviewer,
+        ApprovalsReviewer::GuardianSubagent
+    );
+}
