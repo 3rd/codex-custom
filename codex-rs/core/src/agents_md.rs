@@ -37,6 +37,8 @@ pub(crate) const HIERARCHICAL_AGENTS_MESSAGE: &str =
 pub const DEFAULT_AGENTS_MD_FILENAME: &str = "AGENTS.md";
 /// Preferred local override for AGENTS.md instructions.
 pub const LOCAL_AGENTS_MD_FILENAME: &str = "AGENTS.override.md";
+const CLAUDE_PROJECT_DOC_FILENAME: &str = "CLAUDE.md";
+const CLAUDE_NESTED_PROJECT_DOC_FILENAME: &str = ".claude/CLAUDE.md";
 
 /// When both `Config::instructions` and AGENTS.md docs are present, they will
 /// be concatenated with the following separator.
@@ -304,9 +306,11 @@ impl<'a> AgentsMdManager<'a> {
 
     fn candidate_filenames(&self) -> Vec<&str> {
         let mut names: Vec<&str> =
-            Vec::with_capacity(2 + self.config.project_doc_fallback_filenames.len());
+            Vec::with_capacity(4 + self.config.project_doc_fallback_filenames.len());
         names.push(LOCAL_AGENTS_MD_FILENAME);
         names.push(DEFAULT_AGENTS_MD_FILENAME);
+        names.push(CLAUDE_PROJECT_DOC_FILENAME);
+        names.push(CLAUDE_NESTED_PROJECT_DOC_FILENAME);
         for candidate in &self.config.project_doc_fallback_filenames {
             let candidate = candidate.as_str();
             if candidate.is_empty() {

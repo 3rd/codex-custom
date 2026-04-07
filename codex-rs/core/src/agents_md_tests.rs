@@ -339,6 +339,109 @@ async fn agents_local_md_preferred() {
     );
 }
 
+#[tokio::test]
+async fn uses_claude_md_when_agents_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    fs::write(tmp.path().join("CLAUDE.md"), "claude instructions").unwrap();
+
+    let cfg = make_config(&tmp, /*limit*/ 4096, /*instructions*/ None).await;
+
+    let res = get_user_instructions(&cfg)
+        .await
+        .expect("claude doc expected");
+
+    assert_eq!(res, "claude instructions");
+
+    let discovery = discover_project_doc_paths(&cfg)
+        .await
+        .expect("discover paths");
+    let expected = AbsolutePathBuf::try_from(
+        dunce::canonicalize(tmp.path().join("CLAUDE.md")).expect("canonical claude doc path"),
+    )
+    .expect("absolute claude doc path");
+    assert_eq!(discovery, vec![expected]);
+}
+
+#[tokio::test]
+async fn uses_nested_claude_md_when_other_builtins_are_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+    fs::write(
+        tmp.path().join(".claude").join("CLAUDE.md"),
+        "nested claude instructions",
+    )
+    .unwrap();
+
+    let cfg = make_config(&tmp, /*limit*/ 4096, /*instructions*/ None).await;
+
+    let res = get_user_instructions(&cfg)
+        .await
+        .expect("nested claude doc expected");
+
+    assert_eq!(res, "nested claude instructions");
+
+    let discovery = discover_project_doc_paths(&cfg)
+        .await
+        .expect("discover paths");
+    let expected = AbsolutePathBuf::try_from(
+        dunce::canonicalize(tmp.path().join(".claude").join("CLAUDE.md"))
+            .expect("canonical nested claude doc path"),
+    )
+    .expect("absolute nested claude doc path");
+    assert_eq!(discovery, vec![expected]);
+}
+
+#[tokio::test]
+async fn concatenates_claude_and_agents_docs_across_directories() {
+    let repo = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        repo.path().join(".git"),
+        "gitdir: /path/to/actual/git/dir\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("CLAUDE.md"), "root claude doc").unwrap();
+
+    let nested = repo.path().join("workspace/crate_a");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("AGENTS.md"), "crate agents doc").unwrap();
+
+    let mut cfg = make_config(&repo, /*limit*/ 4096, /*instructions*/ None).await;
+    cfg.cwd = nested.abs();
+
+    let res = get_user_instructions(&cfg).await.expect("docs expected");
+    assert_eq!(res, "root claude doc\n\ncrate agents doc");
+}
+
+#[tokio::test]
+async fn agents_md_preferred_over_builtin_claude_fallbacks() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    fs::write(tmp.path().join("AGENTS.md"), "agents instructions").unwrap();
+    fs::write(tmp.path().join("CLAUDE.md"), "claude instructions").unwrap();
+    fs::create_dir_all(tmp.path().join(".claude")).unwrap();
+    fs::write(
+        tmp.path().join(".claude").join("CLAUDE.md"),
+        "nested claude instructions",
+    )
+    .unwrap();
+
+    let cfg = make_config(&tmp, /*limit*/ 4096, /*instructions*/ None).await;
+
+    let res = get_user_instructions(&cfg)
+        .await
+        .expect("agents doc expected");
+
+    assert_eq!(res, "agents instructions");
+
+    let discovery = discover_project_doc_paths(&cfg)
+        .await
+        .expect("discover paths");
+    let expected = AbsolutePathBuf::try_from(
+        dunce::canonicalize(tmp.path().join("AGENTS.md")).expect("canonical agents doc path"),
+    )
+    .expect("absolute agents doc path");
+    assert_eq!(discovery, vec![expected]);
+}
+
 /// When AGENTS.md is absent but a configured fallback exists, the fallback is used.
 #[tokio::test]
 async fn uses_configured_fallback_when_agents_missing() {
@@ -358,6 +461,36 @@ async fn uses_configured_fallback_when_agents_missing() {
         .expect("fallback doc expected");
 
     assert_eq!(res, "example instructions");
+}
+
+#[tokio::test]
+async fn built_in_claude_fallbacks_win_before_configured_fallbacks() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    fs::write(tmp.path().join("CLAUDE.md"), "claude instructions").unwrap();
+    fs::write(tmp.path().join("EXAMPLE.md"), "example instructions").unwrap();
+
+    let cfg = make_config_with_fallback(
+        &tmp,
+        /*limit*/ 4096,
+        /*instructions*/ None,
+        &["CLAUDE.md", ".claude/CLAUDE.md", "EXAMPLE.md"],
+    )
+    .await;
+
+    let res = get_user_instructions(&cfg)
+        .await
+        .expect("claude doc expected");
+
+    assert_eq!(res, "claude instructions");
+
+    let discovery = discover_project_doc_paths(&cfg)
+        .await
+        .expect("discover paths");
+    let expected = AbsolutePathBuf::try_from(
+        dunce::canonicalize(tmp.path().join("CLAUDE.md")).expect("canonical claude doc path"),
+    )
+    .expect("absolute claude doc path");
+    assert_eq!(discovery, vec![expected]);
 }
 
 /// AGENTS.md remains preferred when both AGENTS.md and fallbacks are present.
