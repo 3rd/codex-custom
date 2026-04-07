@@ -104,6 +104,7 @@ struct DependencyTool {
 
 const SKILLS_FILENAME: &str = "SKILL.md";
 const AGENTS_DIR_NAME: &str = ".agents";
+const CLAUDE_DIR_NAME: &str = ".claude";
 const SKILLS_METADATA_DIR: &str = "agents";
 const SKILLS_METADATA_FILENAME: &str = "openai.yaml";
 const SKILLS_DIR_NAME: &str = "skills";
@@ -337,10 +338,35 @@ async fn repo_agents_skill_roots(
     let dirs = dirs_between_project_root_and_cwd(cwd, &project_root);
     let mut roots = Vec::new();
     for dir in dirs {
+        // Prefer repo-local `.agents/skills` and fall back to `.claude/skills` per directory.
         let agents_skills = dir.join(AGENTS_DIR_NAME).join(SKILLS_DIR_NAME);
+        let mut found_agents_skills = false;
         match fs.get_metadata(&agents_skills, /*sandbox*/ None).await {
+            Ok(metadata) if metadata.is_directory => {
+                roots.push(SkillRoot {
+                    path: agents_skills,
+                    scope: SkillScope::Repo,
+                    file_system: Arc::clone(&fs),
+                });
+                found_agents_skills = true;
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => {
+                tracing::warn!(
+                    "failed to stat repo skills root {}: {err:#}",
+                    agents_skills.display()
+                );
+            }
+        }
+        if found_agents_skills {
+            continue;
+        }
+
+        let claude_skills = dir.join(CLAUDE_DIR_NAME).join(SKILLS_DIR_NAME);
+        match fs.get_metadata(&claude_skills, /*sandbox*/ None).await {
             Ok(metadata) if metadata.is_directory => roots.push(SkillRoot {
-                path: agents_skills,
+                path: claude_skills,
                 scope: SkillScope::Repo,
                 file_system: Arc::clone(&fs),
             }),
@@ -349,7 +375,7 @@ async fn repo_agents_skill_roots(
             Err(err) => {
                 tracing::warn!(
                     "failed to stat repo skills root {}: {err:#}",
-                    agents_skills.display()
+                    claude_skills.display()
                 );
             }
         }

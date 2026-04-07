@@ -328,6 +328,88 @@ async fn loads_skills_from_home_agents_dir_for_user_scope() -> anyhow::Result<()
     Ok(())
 }
 
+#[tokio::test]
+async fn loads_repo_skills_from_claude_dir_when_agents_dir_is_missing() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let repo_root = codex_home.path().join("repo");
+    let nested = repo_root.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    mark_as_git_repo(&repo_root);
+
+    let skill_path = write_skill_at(
+        &repo_root.join(CLAUDE_DIR_NAME).join(SKILLS_DIR_NAME),
+        "claude-repo",
+        "claude-repo-skill",
+        "from repo claude",
+    );
+
+    let cfg = make_config_for_cwd(&codex_home, nested).await;
+    let outcome = load_skills_for_test(&cfg);
+
+    assert!(
+        outcome.errors.is_empty(),
+        "unexpected errors: {:?}",
+        outcome.errors
+    );
+    assert_eq!(
+        outcome.skills,
+        vec![SkillMetadata {
+            name: "claude-repo-skill".to_string(),
+            description: "from repo claude".to_string(),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: normalized(&skill_path),
+            scope: SkillScope::Repo,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn repo_agents_skills_beat_claude_fallback() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let repo_root = codex_home.path().join("repo");
+    let nested = repo_root.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    mark_as_git_repo(&repo_root);
+
+    let agents_skill_path = write_skill_at(
+        &repo_root.join(AGENTS_DIR_NAME).join(SKILLS_DIR_NAME),
+        "agents-repo",
+        "agents-repo-skill",
+        "from repo agents",
+    );
+    write_skill_at(
+        &repo_root.join(CLAUDE_DIR_NAME).join(SKILLS_DIR_NAME),
+        "claude-repo",
+        "claude-repo-skill",
+        "from repo claude",
+    );
+
+    let cfg = make_config_for_cwd(&codex_home, nested).await;
+    let outcome = load_skills_for_test(&cfg);
+
+    assert!(
+        outcome.errors.is_empty(),
+        "unexpected errors: {:?}",
+        outcome.errors
+    );
+    assert_eq!(
+        outcome.skills,
+        vec![SkillMetadata {
+            name: "agents-repo-skill".to_string(),
+            description: "from repo agents".to_string(),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: normalized(&agents_skill_path),
+            scope: SkillScope::Repo,
+        }]
+    );
+}
+
 fn write_skill(codex_home: &TempDir, dir: &str, name: &str, description: &str) -> PathBuf {
     write_skill_at(&codex_home.path().join("skills"), dir, name, description)
 }
