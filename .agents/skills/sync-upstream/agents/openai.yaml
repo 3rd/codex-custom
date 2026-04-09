@@ -1,0 +1,3 @@
+interface:
+  display_name: "Sync Upstream"
+  short_description: "Sync the custom fork with upstream and port fork-only mods one by one"
