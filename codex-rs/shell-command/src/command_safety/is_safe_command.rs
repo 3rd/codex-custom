@@ -1,4 +1,5 @@
 use crate::bash::parse_shell_lc_plain_commands;
+use crate::bash::strip_rtk_command_prefix;
 use crate::command_safety::is_dangerous_command::executable_name_lookup_key;
 // Find the first matching git subcommand, skipping known global options that
 // may appear before it (e.g., `-C`, `-c`, `--git-dir`).
@@ -18,12 +19,13 @@ pub fn is_known_safe_command(command: &[String]) -> bool {
             }
         })
         .collect();
+    let command = strip_rtk_command_prefix(&command);
 
-    if is_safe_command_windows(&command) {
+    if is_safe_command_windows(command) {
         return true;
     }
 
-    if is_safe_to_call_with_exec(&command) {
+    if is_safe_to_call_with_exec(command) {
         return true;
     }
 
@@ -33,7 +35,7 @@ pub fn is_known_safe_command(command: &[String]) -> bool {
     // introduce side effects ( "&&", "||", ";", and "|" ). If every
     // individual command in the script is itself a known‑safe command, then
     // the composite expression is considered safe.
-    if let Some(all_commands) = parse_shell_lc_plain_commands(&command)
+    if let Some(all_commands) = parse_shell_lc_plain_commands(command)
         && !all_commands.is_empty()
         && all_commands
             .iter()
@@ -315,6 +317,11 @@ mod tests {
             assert!(!is_safe_to_call_with_exec(&vec_str(&["numfmt", "1000"])));
             assert!(!is_safe_to_call_with_exec(&vec_str(&["tac", "Cargo.toml"])));
         }
+    }
+
+    #[test]
+    fn rtk_prefixed_safe_command_is_safe() {
+        assert!(is_known_safe_command(&vec_str(&["rtk", "ls", "-la"])));
     }
 
     #[test]

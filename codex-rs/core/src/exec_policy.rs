@@ -37,6 +37,7 @@ use crate::sandboxing::SandboxPermissions;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use codex_shell_command::bash::parse_shell_lc_plain_commands;
 use codex_shell_command::bash::parse_shell_lc_single_command_prefix;
+use codex_shell_command::bash::strip_rtk_command_prefix;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use shlex::try_join as shlex_try_join;
 
@@ -702,14 +703,23 @@ fn commands_for_exec_policy(command: &[String]) -> (Vec<Vec<String>>, bool) {
     if let Some(commands) = parse_shell_lc_plain_commands(command)
         && !commands.is_empty()
     {
-        return (commands, false);
+        return (
+            commands
+                .into_iter()
+                .map(|command| strip_rtk_command_prefix(&command).to_vec())
+                .collect(),
+            false,
+        );
     }
 
     if let Some(single_command) = parse_shell_lc_single_command_prefix(command) {
-        return (vec![single_command], true);
+        return (
+            vec![strip_rtk_command_prefix(&single_command).to_vec()],
+            true,
+        );
     }
 
-    (vec![command.to_vec()], false)
+    (vec![strip_rtk_command_prefix(command).to_vec()], false)
 }
 
 /// Derive a proposed execpolicy amendment when a command requires user approval

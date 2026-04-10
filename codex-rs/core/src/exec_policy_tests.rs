@@ -670,6 +670,80 @@ fn commands_for_exec_policy_falls_back_for_whitespace_shell_script() {
     assert_eq!(commands_for_exec_policy(&command), (vec![command], false));
 }
 
+#[test]
+fn commands_for_exec_policy_strips_rtk_prefix_from_direct_commands() {
+    let command = vec!["rtk".to_string(), "ls".to_string(), "-la".to_string()];
+
+    assert_eq!(
+        commands_for_exec_policy(&command),
+        (vec![vec!["ls".to_string(), "-la".to_string()]], false)
+    );
+}
+
+#[test]
+fn commands_for_exec_policy_strips_rtk_prefix_inside_shell_scripts() {
+    let command = vec![
+        "bash".to_string(),
+        "-lc".to_string(),
+        "rtk ls -la".to_string(),
+    ];
+
+    assert_eq!(
+        commands_for_exec_policy(&command),
+        (vec![vec!["ls".to_string(), "-la".to_string()]], false)
+    );
+}
+
+#[tokio::test]
+async fn rtk_prefixed_safe_shell_script_is_auto_approved_under_unless_trusted() {
+    assert_exec_approval_requirement_for_command(
+        ExecApprovalRequirementScenario {
+            policy_src: None,
+            command: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "rtk ls -la".to_string(),
+            ],
+            approval_policy: AskForApproval::UnlessTrusted,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        },
+        ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
+                "ls".to_string(),
+                "-la".to_string(),
+            ])),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn evaluates_rtk_prefixed_bash_commands_against_prefix_rules() {
+    assert_exec_approval_requirement_for_command(
+        ExecApprovalRequirementScenario {
+            policy_src: Some(r#"prefix_rule(pattern=["rm"], decision="forbidden")"#.to_string()),
+            command: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "rtk rm -rf /some/important/folder".to_string(),
+            ],
+            approval_policy: AskForApproval::OnRequest,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            file_system_sandbox_policy: unrestricted_file_system_sandbox_policy(),
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        },
+        ExecApprovalRequirement::Forbidden {
+            reason: "`bash -lc 'rtk rm -rf /some/important/folder'` rejected: policy forbids commands starting with `rm`".to_string(),
+        },
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn ignore_user_config_keeps_user_policy_files() -> std::io::Result<()> {
     let temp = tempdir()?;
