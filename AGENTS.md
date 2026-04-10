@@ -17,7 +17,18 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
   - Non-`codex_apps` MCP tools in `approval_mode = "auto"` skip the default approval prompt when tool annotations are missing, or when all three approval hints (`destructive_hint`, `read_only_hint`, `open_world_hint`) are unset.
   - This patch exists to keep custom/local MCP servers usable even when they do not emit full tool annotations.
   - If approval flow is still reached while `AskForApproval::Never` is active, the code now declines instead of trying to continue toward a prompt path.
+- Current fork-only shell approval normalization lives in:
+  - `codex-rs/shell-command/src/bash.rs`
+  - `codex-rs/shell-command/src/command_safety/is_safe_command.rs`
+  - `codex-rs/shell-command/src/command_safety/is_dangerous_command.rs`
+  - `codex-rs/core/src/exec_policy.rs`
+  - Leading `rtk` wrapper tokens are stripped before shell auto-approval heuristics and execpolicy matching so `rtk ls -la` is treated like `ls -la` for approval purposes.
 - Regression coverage for the fork patch lives in `codex-rs/core/src/mcp_tool_call_tests.rs`. If you touch this behavior, rerun focused `codex-core` tests before doing anything broader.
+- Regression coverage for the `rtk` shell approval mod lives in:
+  - `codex-rs/shell-command/src/bash.rs`
+  - `codex-rs/shell-command/src/command_safety/is_safe_command.rs`
+  - `codex-rs/shell-command/src/command_safety/is_dangerous_command.rs`
+  - `codex-rs/core/src/exec_policy_tests.rs`
 - When carrying local mods in `codex-rs/tui`:
   - Prefer TUI-local changes over protocol or app-server surface changes unless the mod truly needs a new cross-process concept.
   - When a mod spans behavior and rendering, expect to touch state, permission/config plumbing, visible UI, tests, and snapshots together.

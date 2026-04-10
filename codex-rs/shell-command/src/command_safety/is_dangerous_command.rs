@@ -1,10 +1,13 @@
 use crate::bash::parse_shell_lc_plain_commands;
+use crate::bash::strip_rtk_command_prefix;
 use std::path::Path;
 #[cfg(windows)]
 #[path = "windows_dangerous_commands.rs"]
 mod windows_dangerous_commands;
 
 pub fn command_might_be_dangerous(command: &[String]) -> bool {
+    let command = strip_rtk_command_prefix(command);
+
     #[cfg(windows)]
     {
         if windows_dangerous_commands::is_dangerous_command_windows(command) {
@@ -183,5 +186,12 @@ mod tests {
         } else {
             assert!(!is_dangerous_powershell_words(&command));
         }
+    }
+
+    #[test]
+    fn rtk_prefixed_rm_rf_is_dangerous() {
+        assert!(command_might_be_dangerous(&vec_str(&[
+            "rtk", "rm", "-rf", "/",
+        ])));
     }
 }

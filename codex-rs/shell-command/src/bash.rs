@@ -109,6 +109,15 @@ pub fn extract_bash_command(command: &[String]) -> Option<(&str, &str)> {
     Some((shell, script))
 }
 
+/// Strip a leading `rtk` wrapper token when approval matching needs the real
+/// command prefix instead of the output-compressor shim.
+pub fn strip_rtk_command_prefix(command: &[String]) -> &[String] {
+    match command {
+        [prefix, rest @ ..] if prefix == "rtk" && !rest.is_empty() => rest,
+        _ => command,
+    }
+}
+
 /// Returns the sequence of plain commands within a `bash -lc "..."` or
 /// `zsh -lc "..."` invocation when the script only contains word-only commands
 /// joined by safe operators.
@@ -116,7 +125,12 @@ pub fn parse_shell_lc_plain_commands(command: &[String]) -> Option<Vec<Vec<Strin
     let (_, script) = extract_bash_command(command)?;
 
     let tree = try_parse_shell(script)?;
-    try_parse_word_only_commands_sequence(&tree, script)
+    try_parse_word_only_commands_sequence(&tree, script).map(|commands| {
+        commands
+            .into_iter()
+            .map(|command| strip_rtk_command_prefix(&command).to_vec())
+            .collect()
+    })
 }
 
 /// Returns the parsed argv for a single shell command in a here-doc style
@@ -137,6 +151,7 @@ pub fn parse_shell_lc_single_command_prefix(command: &[String]) -> Option<Vec<St
 
     let command_node = find_single_command_node(root)?;
     parse_heredoc_command_words(command_node, script)
+        .map(|command| strip_rtk_command_prefix(&command).to_vec())
 }
 
 fn parse_plain_command_from_node(cmd: tree_sitter::Node, src: &str) -> Option<Vec<String>> {
@@ -458,6 +473,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_shell_lc_plain_commands_strips_rtk_prefix() {
+        let command = vec![
+            "bash".to_string(),
+            "-lc".to_string(),
+            "rtk ls -la".to_string(),
+        ];
+        let parsed = parse_shell_lc_plain_commands(&command).unwrap();
+        assert_eq!(parsed, vec![vec!["ls".to_string(), "-la".to_string()]]);
+    }
+
+    #[test]
     fn accepts_concatenated_flag_and_value() {
         // Test case: -g"*.py" (flag directly concatenated with quoted value)
         let cmds = parse_seq("rg -n \"foo\" -g\"*.py\"").unwrap();
@@ -517,6 +543,17 @@ mod tests {
         ];
         let parsed_unquoted = parse_shell_lc_single_command_prefix(&command_unquoted);
         assert_eq!(parsed_unquoted, Some(vec!["python3".to_string()]));
+    }
+
+    #[test]
+    fn parse_shell_lc_single_command_prefix_strips_rtk_prefix() {
+        let command = vec![
+            "bash".to_string(),
+            "-lc".to_string(),
+            "rtk python3 <<'PY'\nprint('hello')\nPY".to_string(),
+        ];
+        let parsed = parse_shell_lc_single_command_prefix(&command);
+        assert_eq!(parsed, Some(vec!["python3".to_string()]));
     }
 
     #[test]

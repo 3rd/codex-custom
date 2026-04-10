@@ -37,6 +37,7 @@ use crate::sandboxing::SandboxPermissions;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use codex_shell_command::bash::parse_shell_lc_plain_commands;
 use codex_shell_command::bash::parse_shell_lc_single_command_prefix;
+use codex_shell_command::bash::strip_rtk_command_prefix;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use shlex::try_join as shlex_try_join;
 
@@ -769,7 +770,10 @@ fn commands_for_exec_policy(command: &[String]) -> ExecPolicyCommands {
         && !commands.is_empty()
     {
         return ExecPolicyCommands {
-            commands,
+            commands: commands
+                .into_iter()
+                .map(|command| strip_rtk_command_prefix(&command).to_vec())
+                .collect(),
             used_complex_parsing: false,
             command_origin: ExecPolicyCommandOrigin::Generic,
         };
@@ -791,14 +795,14 @@ fn commands_for_exec_policy(command: &[String]) -> ExecPolicyCommands {
 
     if let Some(single_command) = parse_shell_lc_single_command_prefix(command) {
         return ExecPolicyCommands {
-            commands: vec![single_command],
+            commands: vec![strip_rtk_command_prefix(&single_command).to_vec()],
             used_complex_parsing: true,
             command_origin: ExecPolicyCommandOrigin::Generic,
         };
     }
 
     ExecPolicyCommands {
-        commands: vec![command.to_vec()],
+        commands: vec![strip_rtk_command_prefix(command).to_vec()],
         used_complex_parsing: false,
         command_origin: ExecPolicyCommandOrigin::Generic,
     }
