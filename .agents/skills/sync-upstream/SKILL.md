@@ -29,15 +29,6 @@ Produce or execute a fork refresh for this repo with:
   - `make sync`
 - Use `rtk` to wrap shell commands in this repo.
 
-## Current Mod Map
-
-Treat live git history as authoritative, but as of this skill's creation the fork-only commits are:
-
-1. `chore(custom): add local sync workflow and approval patch`
-2. `feat(custom): add local danger mode toggle`
-3. `feat(custom): add claude project doc fallbacks`
-4. `feat(custom): add repo .claude skill fallback`
-
 ## Process
 
 ### 1. Ground In Repo Truth
