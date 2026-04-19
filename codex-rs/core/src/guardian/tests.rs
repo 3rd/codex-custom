@@ -929,11 +929,17 @@ async fn routes_approval_to_guardian_requires_guardian_reviewer() {
     let mut config = (*turn.config).clone();
     config.approvals_reviewer = ApprovalsReviewer::User;
     turn.config = Arc::new(config.clone());
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::User;
+    turn.replace_runtime_permissions(runtime_permissions);
 
     assert!(!routes_approval_to_guardian(&turn));
 
     config.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn.config = Arc::new(config);
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    turn.replace_runtime_permissions(runtime_permissions);
 
     assert!(routes_approval_to_guardian(&turn));
 }

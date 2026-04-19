@@ -9,6 +9,7 @@ use crate::find_archived_thread_path_by_id_str;
 use crate::find_thread_path_by_id_str;
 use crate::rollout::RolloutRecorder;
 use crate::session::emit_subagent_session_started;
+use crate::session::session::SessionSettingsUpdate;
 use crate::session_prefix::format_subagent_context_line;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::shell_snapshot::ShellSnapshot;
@@ -753,6 +754,24 @@ impl AgentControl {
         let mut thread_ids = vec![agent_id];
         thread_ids.extend(self.live_thread_spawn_descendants(agent_id).await?);
         Ok(thread_ids)
+    }
+
+    pub(crate) async fn override_runtime_permissions_in_live_descendants(
+        &self,
+        agent_id: ThreadId,
+        updates: SessionSettingsUpdate,
+    ) -> CodexResult<()> {
+        let state = self.upgrade()?;
+        for descendant_id in self.live_thread_spawn_descendants(agent_id).await? {
+            let thread = state.get_thread(descendant_id).await?;
+            thread
+                .codex
+                .session
+                .update_settings(updates.clone())
+                .await
+                .map_err(|err| CodexErr::UnsupportedOperation(err.to_string()))?;
+        }
+        Ok(())
     }
 
     pub(crate) async fn get_agent_config_snapshot(

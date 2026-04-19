@@ -493,7 +493,7 @@ fn hook_run_metric_tags(run: &HookRunSummary) -> [(&'static str, &'static str); 
 }
 
 fn hook_permission_mode(turn_context: &TurnContext) -> String {
-    match turn_context.approval_policy.value() {
+    match turn_context.effective_approval_policy() {
         AskForApproval::Never => "bypassPermissions",
         AskForApproval::UnlessTrusted
         | AskForApproval::OnFailure

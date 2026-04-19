@@ -18,6 +18,9 @@ use codex_hooks::HooksConfig;
 use codex_model_provider::create_model_provider;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::FileSystemSandboxPolicy;
+use codex_protocol::protocol::NetworkSandboxPolicy;
+use codex_protocol::protocol::SandboxPolicy;
 use core_test_support::PathExt;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -1560,6 +1563,10 @@ async fn guardian_mode_skips_auto_when_annotations_do_not_require_approval() {
         config.model_provider.clone(),
         turn_context.auth_manager.clone(),
     );
+    let mut runtime_permissions = turn_context.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
@@ -1837,6 +1844,10 @@ async fn guardian_mode_mcp_denial_returns_rationale_message() {
         config.model_provider.clone(),
         turn_context.auth_manager.clone(),
     );
+    let mut runtime_permissions = turn_context.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
@@ -1943,6 +1954,9 @@ async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_never_m
         .approval_policy
         .set(AskForApproval::Never)
         .expect("test setup should allow updating approval policy");
+    let mut runtime_permissions = turn_context.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::Never;
+    turn_context.replace_runtime_permissions(runtime_permissions);
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
     let invocation = custom_mcp_invocation_without_annotations();
@@ -2281,6 +2295,16 @@ async fn full_access_mode_skips_arc_monitor_for_all_approval_modes() {
     let mut config = (*turn_context.config).clone();
     config.chatgpt_base_url = server.uri();
     turn_context.config = Arc::new(config);
+    let mut runtime_permissions = turn_context.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::Never;
+    runtime_permissions.sandbox_policy = SandboxPolicy::DangerFullAccess;
+    runtime_permissions.file_system_sandbox_policy =
+        FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+            &SandboxPolicy::DangerFullAccess,
+            &turn_context.cwd,
+        );
+    runtime_permissions.network_sandbox_policy = NetworkSandboxPolicy::Enabled;
+    turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
@@ -2388,6 +2412,10 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
         config.model_provider.clone(),
         turn_context.auth_manager.clone(),
     );
+    let mut runtime_permissions = turn_context.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);

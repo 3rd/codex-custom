@@ -376,6 +376,9 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         .expect("approval policy should be set");
     turn.provider = create_model_provider(provider_info, turn.auth_manager.clone());
     turn.config = Arc::new(config);
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    turn.replace_runtime_permissions(runtime_permissions);
 
     let invocation = invocation(
         Arc::new(session),
@@ -2107,6 +2110,13 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy should be set");
     turn.permission_profile = expected_permission_profile.clone();
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    runtime_permissions.permission_profile = expected_permission_profile.clone();
+    runtime_permissions.sandbox_policy = expected_sandbox.clone();
+    runtime_permissions.file_system_sandbox_policy = expected_file_system_sandbox_policy.clone();
+    runtime_permissions.network_sandbox_policy = expected_network_sandbox_policy;
+    turn.replace_runtime_permissions(runtime_permissions);
     assert_ne!(
         expected_permission_profile,
         turn.config.permissions.permission_profile(),
@@ -3644,6 +3654,12 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     turn.approval_policy
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    runtime_permissions.sandbox_policy = turn.sandbox_policy.get().clone();
+    runtime_permissions.file_system_sandbox_policy = file_system_sandbox_policy.clone();
+    runtime_permissions.network_sandbox_policy = network_sandbox_policy;
+    turn.replace_runtime_permissions(runtime_permissions);
 
     let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
     let mut expected = (*turn.config).clone();
@@ -3694,6 +3710,9 @@ async fn build_agent_resume_config_clears_base_instructions() {
     turn.approval_policy
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    turn.replace_runtime_permissions(runtime_permissions);
 
     let config = build_agent_resume_config(&turn, /*child_depth*/ 0).expect("resume config");
 

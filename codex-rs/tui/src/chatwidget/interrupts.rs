@@ -6,6 +6,7 @@ use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::ExecCommandBeginEvent;
 use codex_protocol::protocol::ExecCommandEndEvent;
+use codex_protocol::protocol::InteractiveRequestId;
 use codex_protocol::protocol::McpToolCallBeginEvent;
 use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::PatchApplyEndEvent;
@@ -92,6 +93,29 @@ impl InterruptManager {
         self.queue
             .retain(|queued| !queued.matches_resolved_prompt(request));
         self.queue.len() != original_len
+    }
+
+    pub(crate) fn remove_interactive_request(&mut self, request: &InteractiveRequestId) {
+        self.queue.retain(|queued| match (queued, request) {
+            (QueuedInterrupt::ExecApproval(ev), InteractiveRequestId::ExecApproval { id }) => {
+                ev.effective_approval_id() != *id
+            }
+            (QueuedInterrupt::ApplyPatchApproval(ev), InteractiveRequestId::ApplyPatch { id }) => {
+                ev.call_id != *id
+            }
+            (
+                QueuedInterrupt::RequestPermissions(ev),
+                InteractiveRequestId::RequestPermissions { call_id },
+            ) => ev.call_id != *call_id,
+            (
+                QueuedInterrupt::Elicitation(ev),
+                InteractiveRequestId::McpElicitation {
+                    server_name,
+                    request_id,
+                },
+            ) => ev.server_name != *server_name || ev.id != *request_id,
+            _ => true,
+        });
     }
 
     pub(crate) fn flush_all(&mut self, chat: &mut ChatWidget) {

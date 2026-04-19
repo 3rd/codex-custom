@@ -1,6 +1,7 @@
 #![cfg(not(target_os = "windows"))]
 
 use std::fs;
+use std::process::Command;
 
 use assert_matches::assert_matches;
 use codex_features::Feature;
@@ -27,6 +28,23 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use serde_json::Value;
 use serde_json::json;
+
+fn command_path(command: &str) -> String {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {command}"))
+        .output()
+        .unwrap_or_else(|error| panic!("failed to resolve command path for {command}: {error}"));
+    assert!(
+        output.status.success(),
+        "expected {command} to be available in PATH"
+    );
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|error| panic!("command path for {command} should be utf-8: {error}"))
+        .trim()
+        .to_string()
+}
+
 fn call_output(req: &ResponsesRequest, call_id: &str) -> (String, Option<bool>) {
     let raw = req.function_call_output(call_id);
     assert_eq!(
@@ -60,7 +78,8 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
     } = builder.build(&server).await?;
 
     let call_id = "shell-tool-call";
-    let command = vec!["/bin/echo", "tool harness"];
+    let echo_path = command_path("echo");
+    let command = vec![echo_path.as_str(), "tool harness"];
     let first_response = sse(vec![
         ev_response_created("resp-1"),
         ev_local_shell_call(call_id, "completed", command),

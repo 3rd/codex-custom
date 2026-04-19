@@ -251,6 +251,7 @@ pub(super) async fn make_chatwidget_manual(
         plugins_cache: PluginsCacheState::default(),
         plugins_fetch_state: PluginListFetchState::default(),
         interrupts: InterruptManager::new(),
+        app_server_interactive_requests: HashMap::new(),
         reasoning_buffer: String::new(),
         full_reasoning_buffer: String::new(),
         current_status: StatusIndicatorState::working(),

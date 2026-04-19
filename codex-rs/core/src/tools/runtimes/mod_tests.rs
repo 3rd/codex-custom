@@ -161,6 +161,21 @@ fn explicit_escalation_keeps_user_proxy_env_without_codex_marker() {
     assert_eq!(env.get("CUSTOM_ENV"), Some(&"kept".to_string()));
 }
 
+fn bash_path() -> String {
+    let output = Command::new("sh")
+        .args(["-c", "command -v bash"])
+        .output()
+        .unwrap_or_else(|err| panic!("resolve bash path: {err}"));
+    assert!(
+        output.status.success(),
+        "bash should be available: {output:?}"
+    );
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|err| panic!("bash path should be utf8: {err}"))
+        .trim()
+        .to_string()
+}
+
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_bootstraps_in_user_shell() {
     let dir = tempdir().expect("create temp dir");
@@ -381,6 +396,7 @@ fn maybe_wrap_shell_lc_with_snapshot_accepts_dot_alias_cwd() {
 
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_restores_explicit_override_precedence() {
+    let bash_path = bash_path();
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(
@@ -395,7 +411,7 @@ fn maybe_wrap_shell_lc_with_snapshot_restores_explicit_override_precedence() {
         dir.path().abs(),
     );
     let command = vec![
-        "/bin/bash".to_string(),
+        bash_path,
         "-lc".to_string(),
         "printf '%s|%s' \"$TEST_ENV_SNAPSHOT\" \"${SNAPSHOT_ONLY-unset}\"".to_string(),
     ];
@@ -423,6 +439,7 @@ fn maybe_wrap_shell_lc_with_snapshot_restores_explicit_override_precedence() {
 
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_restores_codex_thread_id_from_env() {
+    let bash_path = bash_path();
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(
@@ -437,7 +454,7 @@ fn maybe_wrap_shell_lc_with_snapshot_restores_codex_thread_id_from_env() {
         dir.path().abs(),
     );
     let command = vec![
-        "/bin/bash".to_string(),
+        bash_path,
         "-lc".to_string(),
         "printf '%s' \"$CODEX_THREAD_ID\"".to_string(),
     ];
@@ -743,6 +760,7 @@ fn maybe_wrap_shell_lc_with_snapshot_restores_live_env_when_snapshot_proxy_activ
 
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_keeps_snapshot_path_without_override() {
+    let bash_path = bash_path();
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(
@@ -757,7 +775,7 @@ fn maybe_wrap_shell_lc_with_snapshot_keeps_snapshot_path_without_override() {
         dir.path().abs(),
     );
     let command = vec![
-        "/bin/bash".to_string(),
+        bash_path,
         "-lc".to_string(),
         "printf '%s' \"$PATH\"".to_string(),
     ];
@@ -779,6 +797,7 @@ fn maybe_wrap_shell_lc_with_snapshot_keeps_snapshot_path_without_override() {
 
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_applies_explicit_path_override() {
+    let bash_path = bash_path();
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(
@@ -793,7 +812,7 @@ fn maybe_wrap_shell_lc_with_snapshot_applies_explicit_path_override() {
         dir.path().abs(),
     );
     let command = vec![
-        "/bin/bash".to_string(),
+        bash_path,
         "-lc".to_string(),
         "printf '%s' \"$PATH\"".to_string(),
     ];
@@ -817,6 +836,7 @@ fn maybe_wrap_shell_lc_with_snapshot_applies_explicit_path_override() {
 
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_does_not_embed_override_values_in_argv() {
+    let bash_path = bash_path();
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(
@@ -831,7 +851,7 @@ fn maybe_wrap_shell_lc_with_snapshot_does_not_embed_override_values_in_argv() {
         dir.path().abs(),
     );
     let command = vec![
-        "/bin/bash".to_string(),
+        bash_path,
         "-lc".to_string(),
         "printf '%s' \"$OPENAI_API_KEY\"".to_string(),
     ];
@@ -865,6 +885,7 @@ fn maybe_wrap_shell_lc_with_snapshot_does_not_embed_override_values_in_argv() {
 
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_preserves_unset_override_variables() {
+    let bash_path = bash_path();
     let dir = tempdir().expect("create temp dir");
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(
@@ -879,7 +900,7 @@ fn maybe_wrap_shell_lc_with_snapshot_preserves_unset_override_variables() {
         dir.path().abs(),
     );
     let command = vec![
-            "/bin/bash".to_string(),
+            bash_path,
             "-lc".to_string(),
             "if [ \"${CODEX_TEST_UNSET_OVERRIDE+x}\" = x ]; then printf 'set:%s' \"$CODEX_TEST_UNSET_OVERRIDE\"; else printf 'unset'; fi".to_string(),
         ];

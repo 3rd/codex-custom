@@ -84,6 +84,8 @@ use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ThreadUnsubscribeParams;
 use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnContextUpdateParams;
+use codex_app_server_protocol::TurnContextUpdateResponse;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::TurnStartParams;
@@ -599,6 +601,17 @@ impl AppServerSession {
 
     pub(crate) async fn startup_interrupt(&mut self, thread_id: ThreadId) -> Result<()> {
         self.turn_interrupt(thread_id, String::new()).await
+    }
+
+    pub(crate) async fn turn_context_update(
+        &mut self,
+        params: TurnContextUpdateParams,
+    ) -> Result<TurnContextUpdateResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::TurnContextUpdate { request_id, params })
+            .await
+            .wrap_err("turn/contextUpdate failed in TUI")
     }
 
     pub(crate) async fn turn_steer(

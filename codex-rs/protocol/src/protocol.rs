@@ -16,6 +16,7 @@ use std::time::Duration;
 use crate::AgentPath;
 use crate::ThreadId;
 use crate::approvals::ElicitationRequestEvent;
+use crate::approvals::InteractiveRequestResolvedEvent;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
 use crate::config_types::ModeKind;
@@ -73,6 +74,7 @@ pub use crate::approvals::GuardianAssessmentStatus;
 pub use crate::approvals::GuardianCommandSource;
 pub use crate::approvals::GuardianRiskLevel;
 pub use crate::approvals::GuardianUserAuthorization;
+pub use crate::approvals::InteractiveRequestId;
 pub use crate::approvals::NetworkApprovalContext;
 pub use crate::approvals::NetworkApprovalProtocol;
 pub use crate::approvals::NetworkPolicyAmendment;
@@ -1512,6 +1514,8 @@ pub enum EventMsg {
     ElicitationRequest(ElicitationRequestEvent),
 
     ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent),
+
+    InteractiveRequestResolved(InteractiveRequestResolvedEvent),
 
     /// Structured lifecycle event for a guardian-reviewed approval request.
     GuardianAssessment(GuardianAssessmentEvent),

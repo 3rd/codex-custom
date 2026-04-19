@@ -76,6 +76,7 @@ use codex_app_server_protocol::ReasoningTextDeltaNotification;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequestPayload;
+use codex_app_server_protocol::ServerRequestResolvedNotification;
 use codex_app_server_protocol::SkillsChangedNotification;
 use codex_app_server_protocol::TerminalInteractionNotification;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
@@ -129,6 +130,7 @@ use codex_protocol::protocol::CodexErrorInfo as CoreCodexErrorInfo;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecApprovalRequestEvent;
+use codex_protocol::protocol::InteractiveRequestId;
 use codex_protocol::protocol::McpToolCallBeginEvent;
 use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::Op;
@@ -645,6 +647,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                     let (pending_request_id, rx) = outgoing
                         .send_request(ServerRequestPayload::FileChangeRequestApproval(params))
                         .await;
+                    {
+                        let mut state = thread_state.lock().await;
+                        state.remember_interactive_request(
+                            InteractiveRequestId::ApplyPatch {
+                                id: item_id.clone(),
+                            },
+                            pending_request_id.clone(),
+                        );
+                    }
                     tokio::spawn(async move {
                         on_file_change_request_approval_response(
                             event_turn_id,
@@ -792,6 +803,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                             params,
                         ))
                         .await;
+                    {
+                        let mut state = thread_state.lock().await;
+                        state.remember_interactive_request(
+                            InteractiveRequestId::ExecApproval {
+                                id: approval_id_for_op.clone(),
+                            },
+                            pending_request_id.clone(),
+                        );
+                    }
                     tokio::spawn(async move {
                         on_command_execution_request_approval_response(
                             event_turn_id,
@@ -921,6 +941,16 @@ pub(crate) async fn apply_bespoke_event_handling(
                 let (pending_request_id, rx) = outgoing
                     .send_request(ServerRequestPayload::McpServerElicitationRequest(params))
                     .await;
+                {
+                    let mut state = thread_state.lock().await;
+                    state.remember_interactive_request(
+                        InteractiveRequestId::McpElicitation {
+                            server_name: request.server_name.clone(),
+                            request_id: request.id.clone(),
+                        },
+                        pending_request_id.clone(),
+                    );
+                }
                 tokio::spawn(async move {
                     on_mcp_server_elicitation_response(
                         request.server_name,
@@ -956,6 +986,15 @@ pub(crate) async fn apply_bespoke_event_handling(
                 let (pending_request_id, rx) = outgoing
                     .send_request(ServerRequestPayload::PermissionsRequestApproval(params))
                     .await;
+                {
+                    let mut state = thread_state.lock().await;
+                    state.remember_interactive_request(
+                        InteractiveRequestId::RequestPermissions {
+                            call_id: request.call_id.clone(),
+                        },
+                        pending_request_id.clone(),
+                    );
+                }
                 let pending_response = PendingRequestPermissionsResponse {
                     call_id: request.call_id,
                     requested_permissions,
@@ -987,6 +1026,27 @@ pub(crate) async fn apply_bespoke_event_handling(
                 {
                     error!("failed to submit RequestPermissionsResponse: {err}");
                 }
+            }
+        }
+        EventMsg::InteractiveRequestResolved(event) => {
+            let pending_request_id = {
+                let mut state = thread_state.lock().await;
+                state.take_request_id_for_interactive_request(&event.request)
+            };
+            if let Some(pending_request_id) = pending_request_id {
+                {
+                    let mut state = thread_state.lock().await;
+                    state.mark_server_request_resolved(pending_request_id.clone());
+                }
+                outgoing.cancel_request(&pending_request_id).await;
+                outgoing
+                    .send_server_notification(ServerNotification::ServerRequestResolved(
+                        ServerRequestResolvedNotification {
+                            thread_id: conversation_id.to_string(),
+                            request_id: pending_request_id,
+                        },
+                    ))
+                    .await;
             }
         }
         EventMsg::DynamicToolCallRequest(request) => {
@@ -2598,6 +2658,13 @@ async fn on_mcp_server_elicitation_response(
     permission_guard: ThreadWatchActiveGuard,
 ) {
     let response = receiver.await;
+    {
+        let mut state = thread_state.lock().await;
+        if state.take_resolved_server_request(&pending_request_id) {
+            return;
+        }
+        state.forget_server_request(&pending_request_id);
+    }
     resolve_server_request_on_thread_listener(&thread_state, pending_request_id).await;
     drop(permission_guard);
     let response = mcp_server_elicitation_response_from_client_result(response);
@@ -2669,6 +2736,13 @@ async fn on_request_permissions_response(
         request_permissions_guard,
     } = pending_response;
     let response = receiver.await;
+    {
+        let mut state = thread_state.lock().await;
+        if state.take_resolved_server_request(&pending_request_id) {
+            return;
+        }
+        state.forget_server_request(&pending_request_id);
+    }
     resolve_server_request_on_thread_listener(&thread_state, pending_request_id).await;
     drop(request_permissions_guard);
     let Some(response) = request_permissions_response_from_client_result(
@@ -2812,6 +2886,13 @@ async fn on_file_change_request_approval_response(
     permission_guard: ThreadWatchActiveGuard,
 ) {
     let response = receiver.await;
+    {
+        let mut state = thread_state.lock().await;
+        if state.take_resolved_server_request(&pending_request_id) {
+            return;
+        }
+        state.forget_server_request(&pending_request_id);
+    }
     resolve_server_request_on_thread_listener(&thread_state, pending_request_id).await;
     drop(permission_guard);
     let (decision, completion_status) = match response {
@@ -2883,6 +2964,13 @@ async fn on_command_execution_request_approval_response(
     permission_guard: ThreadWatchActiveGuard,
 ) {
     let response = receiver.await;
+    {
+        let mut state = thread_state.lock().await;
+        if state.take_resolved_server_request(&pending_request_id) {
+            return;
+        }
+        state.forget_server_request(&pending_request_id);
+    }
     resolve_server_request_on_thread_listener(&thread_state, pending_request_id).await;
     drop(permission_guard);
     let (decision, completion_status) = match response {

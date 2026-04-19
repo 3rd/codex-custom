@@ -80,6 +80,22 @@ fn assert_posix_snapshot_sections(snapshot: &str) {
     assert!(snapshot.contains("setopts "));
 }
 
+#[cfg(unix)]
+fn bash_path() -> String {
+    let output = Command::new("sh")
+        .args(["-c", "command -v bash"])
+        .output()
+        .unwrap_or_else(|err| panic!("resolve bash path: {err}"));
+    assert!(
+        output.status.success(),
+        "bash should be available: {output:?}"
+    );
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|err| panic!("bash path should be utf8: {err}"))
+        .trim()
+        .to_string()
+}
+
 async fn get_snapshot(shell_type: ShellType) -> Result<String> {
     let dir = tempdir()?;
     let path = dir.path().join("snapshot.sh");
@@ -126,7 +142,8 @@ fn snapshot_file_name_parser_supports_legacy_and_suffixed_names() {
 #[cfg(unix)]
 #[test]
 fn bash_snapshot_filters_invalid_exports() -> Result<()> {
-    let output = Command::new("/bin/bash")
+    let bash_path = bash_path();
+    let output = Command::new(&bash_path)
         .arg("-c")
         .arg(bash_snapshot_script())
         .env("BASH_ENV", "/dev/null")
@@ -150,8 +167,9 @@ fn bash_snapshot_filters_invalid_exports() -> Result<()> {
 #[cfg(unix)]
 #[test]
 fn bash_snapshot_preserves_multiline_exports() -> Result<()> {
+    let bash_path = bash_path();
     let multiline_cert = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
-    let output = Command::new("/bin/bash")
+    let output = Command::new(&bash_path)
         .arg("-c")
         .arg(bash_snapshot_script())
         .env("BASH_ENV", "/dev/null")
@@ -170,7 +188,7 @@ fn bash_snapshot_preserves_multiline_exports() -> Result<()> {
     let snapshot_path = dir.path().join("snapshot.sh");
     std::fs::write(&snapshot_path, stdout.as_bytes())?;
 
-    let validate = Command::new("/bin/bash")
+    let validate = Command::new(&bash_path)
         .arg("-c")
         .arg("set -e; . \"$1\"")
         .arg("bash")
@@ -191,9 +209,10 @@ fn bash_snapshot_preserves_multiline_exports() -> Result<()> {
 #[tokio::test]
 async fn try_new_creates_and_deletes_snapshot_file() -> Result<()> {
     let dir = tempdir()?;
+    let bash_path = bash_path();
     let shell = Shell {
         shell_type: ShellType::Bash,
-        shell_path: PathBuf::from("/bin/bash"),
+        shell_path: PathBuf::from(bash_path),
         shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
 
@@ -221,9 +240,10 @@ async fn try_new_creates_and_deletes_snapshot_file() -> Result<()> {
 async fn try_new_uses_distinct_generation_paths() -> Result<()> {
     let dir = tempdir()?;
     let session_id = ThreadId::new();
+    let bash_path = bash_path();
     let shell = Shell {
         shell_type: ShellType::Bash,
-        shell_path: PathBuf::from("/bin/bash"),
+        shell_path: PathBuf::from(bash_path),
         shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
 
@@ -268,9 +288,10 @@ async fn snapshot_shell_does_not_inherit_stdin() -> Result<()> {
     let bashrc = format!("read -t 1 -r ignored\nprintf '%s' \"$?\" > \"{read_status_display}\"\n");
     fs::write(home.join(".bashrc"), bashrc).await?;
 
+    let bash_path = bash_path();
     let shell = Shell {
         shell_type: ShellType::Bash,
-        shell_path: PathBuf::from("/bin/bash"),
+        shell_path: PathBuf::from(bash_path),
         shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
 

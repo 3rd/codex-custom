@@ -6,7 +6,7 @@ OPENAI_URL ?= https://github.com/openai/codex.git
 SYNC_BRANCH ?= main
 CUSTOM_BRANCH ?= custom
 
-.PHONY: require-custom build install ensure-openai sync sync-main rebase-custom update-custom
+.PHONY: require-custom build clean install ensure-openai sync sync-main rebase-custom update-custom
 
 require-custom:
 	@current_branch="$$(git branch --show-current)"; \
@@ -18,6 +18,9 @@ require-custom:
 build: require-custom
 	mkdir -p "$(CARGO_HOME)"
 	nix develop . --command bash -lc 'export CARGO_HOME="$(CARGO_HOME)"; cd codex-rs && cargo build -p codex-cli --bin codex --profile local-release'
+
+clean:
+	nix develop . --command bash -lc 'cd codex-rs && cargo clean'
 
 install: require-custom build
 	mkdir -p "$(BIN_DIR)"

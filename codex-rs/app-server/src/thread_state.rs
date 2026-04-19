@@ -9,6 +9,7 @@ use codex_core::CodexThread;
 use codex_core::ThreadConfigSnapshot;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::InteractiveRequestId;
 use codex_protocol::protocol::RolloutItem;
 use codex_rollout::state_db::StateDbHandle;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -81,6 +82,8 @@ pub(crate) struct ThreadState {
     listener_command_tx: Option<mpsc::UnboundedSender<ThreadListenerCommand>>,
     current_turn_history: ThreadHistoryBuilder,
     listener_thread: Option<Weak<CodexThread>>,
+    interactive_request_ids: HashMap<InteractiveRequestId, RequestId>,
+    resolved_server_requests: HashSet<RequestId>,
 }
 
 impl ThreadState {
@@ -113,6 +116,8 @@ impl ThreadState {
         self.listener_command_tx = None;
         self.current_turn_history.reset();
         self.listener_thread = None;
+        self.interactive_request_ids.clear();
+        self.resolved_server_requests.clear();
     }
 
     pub(crate) fn set_experimental_raw_events(&mut self, enabled: bool) {
@@ -140,6 +145,37 @@ impl ThreadState {
             self.last_terminal_turn_id = Some(event_turn_id.to_string());
             self.current_turn_history.reset();
         }
+    }
+
+    pub(crate) fn remember_interactive_request(
+        &mut self,
+        request: InteractiveRequestId,
+        request_id: RequestId,
+    ) {
+        self.interactive_request_ids.insert(request, request_id);
+    }
+
+    pub(crate) fn take_request_id_for_interactive_request(
+        &mut self,
+        request: &InteractiveRequestId,
+    ) -> Option<RequestId> {
+        self.interactive_request_ids.remove(request)
+    }
+
+    pub(crate) fn forget_server_request(&mut self, request_id: &RequestId) {
+        self.resolved_server_requests.remove(request_id);
+        self.interactive_request_ids
+            .retain(|_, pending_request_id| pending_request_id != request_id);
+    }
+
+    pub(crate) fn mark_server_request_resolved(&mut self, request_id: RequestId) {
+        self.interactive_request_ids
+            .retain(|_, pending_request_id| pending_request_id != &request_id);
+        self.resolved_server_requests.insert(request_id);
+    }
+
+    pub(crate) fn take_resolved_server_request(&mut self, request_id: &RequestId) -> bool {
+        self.resolved_server_requests.remove(request_id)
     }
 }
 

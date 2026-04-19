@@ -79,6 +79,7 @@ use codex_protocol::ToolName;
 use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecPolicyAmendment;
+use codex_protocol::approvals::InteractiveRequestId;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::ApprovalsReviewer;
@@ -282,6 +283,7 @@ use crate::skills_watcher::SkillsWatcher;
 use crate::skills_watcher::SkillsWatcherEvent;
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
+use crate::state::PendingApprovalRequest;
 use crate::state::PendingRequestPermissions;
 use crate::state::SessionServices;
 use crate::state::SessionState;
@@ -1829,7 +1831,15 @@ impl Session {
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(effective_approval_id.clone(), tx_approve)
+                    ts.insert_pending_approval(
+                        effective_approval_id.clone(),
+                        PendingApprovalRequest {
+                            request: InteractiveRequestId::ExecApproval {
+                                id: effective_approval_id.clone(),
+                            },
+                            tx: tx_approve,
+                        },
+                    )
                 }
                 None => None,
             }
@@ -1897,7 +1907,15 @@ impl Session {
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(approval_id.clone(), tx_approve)
+                    ts.insert_pending_approval(
+                        approval_id.clone(),
+                        PendingApprovalRequest {
+                            request: InteractiveRequestId::ApplyPatch {
+                                id: approval_id.clone(),
+                            },
+                            tx: tx_approve,
+                        },
+                    )
                 }
                 None => None,
             }

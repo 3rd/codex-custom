@@ -931,6 +931,22 @@ fn sandbox_detection_flags_sigsys_exit_code() {
 }
 
 #[cfg(unix)]
+fn bash_path() -> String {
+    let output = std::process::Command::new("sh")
+        .args(["-c", "command -v bash"])
+        .output()
+        .unwrap_or_else(|err| panic!("resolve bash path: {err}"));
+    assert!(
+        output.status.success(),
+        "bash should be available: {output:?}"
+    );
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|err| panic!("bash path should be utf8: {err}"))
+        .trim()
+        .to_string()
+}
+
+#[cfg(unix)]
 #[tokio::test]
 async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()> {
     // On Linux/macOS, /bin/bash is typically present; on FreeBSD/OpenBSD,
@@ -943,7 +959,7 @@ async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()>
     ];
     #[cfg(all(unix, not(any(target_os = "freebsd", target_os = "openbsd"))))]
     let command = vec![
-        "/bin/bash".to_string(),
+        bash_path(),
         "-c".to_string(),
         "sleep 60 & echo $!; sleep 60".to_string(),
     ];

@@ -35,13 +35,14 @@ pub(crate) async fn apply_patch(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     action: ApplyPatchAction,
 ) -> InternalApplyPatchInvocation {
+    let runtime_permissions = turn_context.runtime_permissions();
     match assess_patch_safety(
         &action,
-        turn_context.approval_policy.value(),
-        &turn_context.permission_profile(),
+        runtime_permissions.approval_policy,
+        &runtime_permissions.permission_profile,
         file_system_sandbox_policy,
         &turn_context.cwd,
-        turn_context.windows_sandbox_level,
+        runtime_permissions.windows_sandbox_level,
     ) {
         SafetyCheck::AutoApprove {
             user_explicitly_approved,

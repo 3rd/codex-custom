@@ -42,6 +42,7 @@ use serde_json::Value;
 use serde_json::json;
 use serial_test::serial;
 use tempfile::TempDir;
+use std::process::Command;
 
 fn tool_names(body: &Value) -> Vec<String> {
     body.get("tools")
@@ -76,6 +77,22 @@ fn ev_namespaced_function_call(
             "arguments": arguments,
         }
     })
+}
+
+fn command_path(command: &str) -> String {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {command}"))
+        .output()
+        .expect("resolve command path");
+    assert!(
+        output.status.success(),
+        "expected {command} to be available in PATH"
+    );
+    String::from_utf8(output.stdout)
+        .expect("command path should be utf-8")
+        .trim()
+        .to_string()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -359,7 +376,8 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
     let mut builder = test_codex().with_model("test-shell-json");
     let test = builder.build(&server).await?;
 
-    let command = ["/bin/echo", "shell ok"];
+    let echo_path = command_path("echo");
+    let command = [echo_path.as_str(), "shell ok"];
     let call_id_blocked = "shell-blocked";
     let call_id_success = "shell-success";
 
@@ -460,7 +478,7 @@ async fn sandbox_denied_shell_returns_original_output() -> Result<()> {
     let target_path = fixture.workspace_path("sandbox-denied.txt");
     let sentinel = "sandbox-denied sentinel output";
     let command = vec![
-        "/bin/sh".to_string(),
+        command_path("sh"),
         "-c".to_string(),
         format!(
             "printf {sentinel:?}; printf {content:?} > {path:?}",
@@ -724,7 +742,7 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
     let call_id = "shell-timeout";
     let timeout_ms = 50u64;
     let args = json!({
-        "command": ["/bin/sh", "-c", "yes line | head -n 400; sleep 1"],
+        "command": [command_path("sh"), "-c", "yes line | head -n 400; sleep 1"],
         "timeout_ms": timeout_ms,
     });
 
@@ -799,13 +817,14 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
     let call_id = "shell-grandchild-timeout";
     let pid_path = test.cwd.path().join("grandchild_pid.txt");
     let script_path = test.cwd.path().join("spawn_detached.py");
+    let sh_path = command_path("sh");
     let script = format!(
         r#"import subprocess
 import time
 from pathlib import Path
 
 # Spawn a detached grandchild that inherits stdout/stderr so the pipe stays open.
-proc = subprocess.Popen(["/bin/sh", "-c", "sleep 60"], start_new_session=True)
+proc = subprocess.Popen([{sh_path:?}, "-c", "sleep 60"], start_new_session=True)
 Path({pid_path:?}).write_text(str(proc.pid))
 time.sleep(60)
 "#

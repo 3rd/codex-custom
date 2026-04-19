@@ -829,9 +829,10 @@ async fn maybe_request_mcp_tool_approval(
     metadata: Option<&McpToolApprovalMetadata>,
     approval_mode: AppToolApproval,
 ) -> Option<McpToolApprovalDecision> {
+    let runtime_permissions = turn_context.runtime_permissions();
     if mcp_permission_prompt_is_auto_approved(
-        turn_context.approval_policy.value(),
-        &turn_context.permission_profile(),
+        runtime_permissions.approval_policy,
+        &runtime_permissions.permission_profile,
     ) {
         return None;
     }
@@ -870,7 +871,7 @@ async fn maybe_request_mcp_tool_approval(
         }
     }
 
-    if matches!(turn_context.approval_policy.value(), AskForApproval::Never) {
+    if matches!(runtime_permissions.approval_policy, AskForApproval::Never) {
         return Some(McpToolApprovalDecision::Decline { message: None });
     }
 

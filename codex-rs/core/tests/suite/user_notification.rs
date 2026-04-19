@@ -37,7 +37,7 @@ async fn summarize_context_three_requests_and_instructions() -> anyhow::Result<(
     let notify_script = notify_dir.path().join("notify.sh");
     std::fs::write(
         &notify_script,
-        r#"#!/bin/bash
+        r#"#!/usr/bin/env bash
 set -e
 payload_path="$(dirname "${0}")/notify.txt"
 tmp_path="${payload_path}.tmp"

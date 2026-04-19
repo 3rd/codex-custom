@@ -98,6 +98,7 @@ use codex_app_server_protocol::McpServerStartupState;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::McpServerStatusUpdatedNotification;
 use codex_app_server_protocol::ModelVerification as AppServerModelVerification;
+use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ThreadGoal as AppThreadGoal;
@@ -191,6 +192,7 @@ use codex_protocol::protocol::GuardianAssessmentEvent;
 use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::ImageGenerationBeginEvent;
 use codex_protocol::protocol::ImageGenerationEndEvent;
+use codex_protocol::protocol::InteractiveRequestId;
 use codex_protocol::protocol::ListSkillsResponseEvent;
 #[cfg(test)]
 use codex_protocol::protocol::McpListToolsResponseEvent;
@@ -903,6 +905,7 @@ pub(crate) struct ChatWidget {
     plugins_active_tab_id: Option<String>,
     // Queue of interruptive UI events deferred during an active write cycle
     interrupts: InterruptManager,
+    app_server_interactive_requests: HashMap<AppServerRequestId, InteractiveRequestId>,
     // Accumulates the current reasoning block text to extract a header
     reasoning_buffer: String,
     // Accumulates full reasoning content for transcript-only recording
@@ -1957,6 +1960,42 @@ fn request_user_input_from_params(params: ToolRequestUserInputParams) -> Request
                 },
             )
             .collect(),
+    }
+}
+
+fn interactive_request_id_from_server_request(
+    request: &ServerRequest,
+) -> Option<InteractiveRequestId> {
+    match request {
+        ServerRequest::CommandExecutionRequestApproval { params, .. } => {
+            Some(InteractiveRequestId::ExecApproval {
+                id: params
+                    .approval_id
+                    .clone()
+                    .unwrap_or_else(|| params.item_id.clone()),
+            })
+        }
+        ServerRequest::FileChangeRequestApproval { params, .. } => {
+            Some(InteractiveRequestId::ApplyPatch {
+                id: params.item_id.clone(),
+            })
+        }
+        ServerRequest::McpServerElicitationRequest { request_id, params } => {
+            Some(InteractiveRequestId::McpElicitation {
+                server_name: params.server_name.clone(),
+                request_id: app_server_request_id_to_mcp_request_id(request_id),
+            })
+        }
+        ServerRequest::PermissionsRequestApproval { params, .. } => {
+            Some(InteractiveRequestId::RequestPermissions {
+                call_id: params.item_id.clone(),
+            })
+        }
+        ServerRequest::ToolRequestUserInput { .. }
+        | ServerRequest::DynamicToolCall { .. }
+        | ServerRequest::ChatgptAuthTokensRefresh { .. }
+        | ServerRequest::ApplyPatchApproval { .. }
+        | ServerRequest::ExecCommandApproval { .. } => None,
     }
 }
 
@@ -4050,6 +4089,17 @@ impl ChatWidget {
         );
     }
 
+    fn resolve_interactive_request(&mut self, request: &InteractiveRequestId) {
+        self.interrupts.remove_interactive_request(request);
+        self.bottom_pane.resolve_interactive_request(request);
+    }
+
+    fn on_server_request_resolved(&mut self, request_id: &AppServerRequestId) {
+        if let Some(request) = self.app_server_interactive_requests.remove(request_id) {
+            self.resolve_interactive_request(&request);
+        }
+    }
+
     /// Handle guardian review lifecycle events for the current thread.
     ///
     /// In-progress assessments temporarily own the live status footer so the
@@ -5640,6 +5690,7 @@ impl ChatWidget {
             plugin_install_auth_flow: None,
             plugins_active_tab_id: None,
             interrupts: InterruptManager::new(),
+            app_server_interactive_requests: HashMap::new(),
             reasoning_buffer: String::new(),
             full_reasoning_buffer: String::new(),
             current_status: StatusIndicatorState::working(),
@@ -6947,6 +6998,10 @@ impl ChatWidget {
         request: ServerRequest,
         replay_kind: Option<ReplayKind>,
     ) {
+        if let Some(interactive_request) = interactive_request_id_from_server_request(&request) {
+            self.app_server_interactive_requests
+                .insert(request.id().clone(), interactive_request);
+        }
         let id = request.id().to_string();
         match request {
             ServerRequest::CommandExecutionRequestApproval { params, .. } => {
@@ -7235,8 +7290,10 @@ impl ChatWidget {
                     self.on_realtime_conversation_sdp(notification.sdp);
                 }
             }
-            ServerNotification::ServerRequestResolved(_)
-            | ServerNotification::AccountUpdated(_)
+            ServerNotification::ServerRequestResolved(notification) => {
+                self.on_server_request_resolved(&notification.request_id);
+            }
+            ServerNotification::AccountUpdated(_)
             | ServerNotification::AccountRateLimitsUpdated(_)
             | ServerNotification::ThreadStarted(_)
             | ServerNotification::ThreadStatusChanged(_)
@@ -7742,6 +7799,9 @@ impl ChatWidget {
             }
             EventMsg::ApplyPatchApprovalRequest(ev) => {
                 self.on_apply_patch_approval_request(id.unwrap_or_default(), ev)
+            }
+            EventMsg::InteractiveRequestResolved(ev) => {
+                self.resolve_interactive_request(&ev.request);
             }
             EventMsg::ElicitationRequest(ev) => {
                 self.on_elicitation_request(ev);

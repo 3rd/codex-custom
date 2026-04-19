@@ -37,6 +37,7 @@ use crate::tools::runtimes::shell::ShellRuntimeBackend;
 use crate::tools::sandboxing::ToolCtx;
 use codex_features::Feature;
 use codex_protocol::models::AdditionalPermissionProfile;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ExecCommandSource;
 use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_tools::ShellCommandBackendConfig;
@@ -441,6 +442,7 @@ impl ShellHandler {
             additional_permissions,
         )
         .await;
+        let runtime_permissions = turn.runtime_permissions();
         let additional_permissions_allowed = exec_permission_approvals_enabled
             || (session.features().enabled(Feature::RequestPermissionsTool)
                 && effective_additional_permissions.permissions_preapproved);
@@ -453,7 +455,7 @@ impl ShellHandler {
             || {
                 normalize_and_validate_additional_permissions(
                     additional_permissions_allowed,
-                    turn.approval_policy.value(),
+                    runtime_permissions.approval_policy,
                     effective_additional_permissions.sandbox_permissions,
                     effective_additional_permissions.additional_permissions,
                     effective_additional_permissions.permissions_preapproved,
@@ -472,11 +474,11 @@ impl ShellHandler {
             .requests_sandbox_override()
             && !effective_additional_permissions.permissions_preapproved
             && !matches!(
-                turn.approval_policy.value(),
-                codex_protocol::protocol::AskForApproval::OnRequest
+                runtime_permissions.approval_policy,
+                AskForApproval::OnRequest
             )
         {
-            let approval_policy = turn.approval_policy.value();
+            let approval_policy = runtime_permissions.approval_policy;
             return Err(FunctionCallError::RespondToModel(format!(
                 "approval policy is {approval_policy:?}; reject command — you should not ask for escalated permissions if the approval policy is {approval_policy:?}"
             )));
@@ -519,9 +521,9 @@ impl ShellHandler {
             .exec_policy
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &exec_params.command,
-                approval_policy: turn.approval_policy.value(),
-                permission_profile: turn.permission_profile(),
-                file_system_sandbox_policy: &file_system_sandbox_policy,
+                approval_policy: runtime_permissions.approval_policy,
+                permission_profile: runtime_permissions.permission_profile.clone(),
+                file_system_sandbox_policy: &runtime_permissions.file_system_sandbox_policy,
                 sandbox_cwd: turn.cwd.as_path(),
                 sandbox_permissions: if effective_additional_permissions.permissions_preapproved {
                     codex_protocol::models::SandboxPermissions::UseDefault
@@ -570,7 +572,7 @@ impl ShellHandler {
                 &req,
                 &tool_ctx,
                 &turn,
-                turn.approval_policy.value(),
+                runtime_permissions.approval_policy,
             )
             .await
             .map(|result| result.output);

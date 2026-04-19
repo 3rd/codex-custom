@@ -3766,6 +3766,10 @@ async fn request_permissions_emits_event_when_granular_policy_allows_requests() 
             mcp_elicitations: true,
         }))
         .expect("test setup should allow updating approval policy");
+    let turn_context_raw = Arc::get_mut(&mut turn_context).expect("single turn context ref");
+    let mut runtime_permissions = turn_context_raw.runtime_permissions();
+    runtime_permissions.approval_policy = turn_context_raw.approval_policy.value();
+    turn_context_raw.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
@@ -3939,6 +3943,10 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
             mcp_elicitations: true,
         }))
         .expect("test setup should allow updating approval policy");
+    let turn_context_raw = Arc::get_mut(&mut turn_context).expect("single turn context ref");
+    let mut runtime_permissions = turn_context_raw.runtime_permissions();
+    runtime_permissions.approval_policy = turn_context_raw.approval_policy.value();
+    turn_context_raw.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
@@ -3976,6 +3984,213 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
             .is_err(),
         "request_permissions should not emit an event when granular.request_permissions is false"
     );
+}
+
+#[tokio::test]
+async fn pending_exec_approval_is_auto_approved_when_runtime_policy_switches_to_danger_full_access()
+{
+    let (session, turn_context, rx) = make_session_and_context_with_rx().await;
+    let input = vec![UserInput::Text {
+        text: "hello".to_string(),
+        text_elements: Vec::new(),
+    }];
+    session
+        .spawn_task(
+            Arc::clone(&turn_context),
+            input,
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+
+    let approval_id = "approval-1".to_string();
+    let handle = tokio::spawn({
+        let session = Arc::clone(&session);
+        let turn_context = Arc::clone(&turn_context);
+        let approval_id = approval_id.clone();
+        async move {
+            session
+                .request_command_approval(
+                    turn_context.as_ref(),
+                    "call-1".to_string(),
+                    Some(approval_id),
+                    vec!["echo".to_string(), "hello".to_string()],
+                    turn_context.cwd.to_path_buf(),
+                    Some("need shell".to_string()),
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+        }
+    });
+
+    let approval_request = tokio::time::timeout(StdDuration::from_secs(1), async {
+        loop {
+            let event = rx.recv().await.expect("approval request event");
+            if let EventMsg::ExecApprovalRequest(request) = event.msg {
+                break request;
+            }
+        }
+    })
+    .await
+    .expect("exec approval event timed out");
+    assert_eq!(approval_request.effective_approval_id(), approval_id);
+
+    session
+        .update_settings(SessionSettingsUpdate {
+            sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            ..Default::default()
+        })
+        .await
+        .expect("runtime sandbox update should succeed");
+
+    assert_eq!(
+        turn_context.effective_sandbox_policy(),
+        SandboxPolicy::DangerFullAccess
+    );
+
+    let resolved_request = tokio::time::timeout(StdDuration::from_secs(1), async {
+        loop {
+            let event = rx.recv().await.expect("interactive resolution event");
+            if let EventMsg::InteractiveRequestResolved(resolved) = event.msg {
+                break resolved.request;
+            }
+        }
+    })
+    .await
+    .expect("interactive request resolved event timed out");
+    assert_eq!(
+        resolved_request,
+        codex_protocol::approvals::InteractiveRequestId::ExecApproval { id: approval_id }
+    );
+
+    let decision = tokio::time::timeout(StdDuration::from_secs(1), handle)
+        .await
+        .expect("exec approval future timed out")
+        .expect("exec approval join error");
+    assert_eq!(decision, ReviewDecision::Approved);
+
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
+}
+
+#[tokio::test]
+async fn pending_request_permissions_is_auto_denied_when_runtime_policy_switches_to_never() {
+    let (session, _turn_context, rx) = make_session_and_context_with_rx().await;
+    session
+        .update_settings(SessionSettingsUpdate {
+            approval_policy: Some(AskForApproval::Granular(GranularApprovalConfig {
+                sandbox_approval: true,
+                rules: true,
+                skill_approval: true,
+                request_permissions: true,
+                mcp_elicitations: true,
+            })),
+            ..Default::default()
+        })
+        .await
+        .expect("precondition approval policy update should succeed");
+
+    let turn_context = Arc::new(session.new_default_turn().await);
+    let input = vec![UserInput::Text {
+        text: "hello".to_string(),
+        text_elements: Vec::new(),
+    }];
+    session
+        .spawn_task(
+            Arc::clone(&turn_context),
+            input,
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+
+    let call_id = "call-1".to_string();
+    let handle = tokio::spawn({
+        let session = Arc::clone(&session);
+        let turn_context = Arc::clone(&turn_context);
+        let call_id = call_id.clone();
+        async move {
+            session
+                .request_permissions(
+                    turn_context.as_ref(),
+                    call_id,
+                    codex_protocol::request_permissions::RequestPermissionsArgs {
+                        reason: Some("need network".to_string()),
+                        permissions: RequestPermissionProfile {
+                            network: Some(codex_protocol::models::NetworkPermissions {
+                                enabled: Some(true),
+                            }),
+                            ..RequestPermissionProfile::default()
+                        },
+                    },
+                )
+                .await
+        }
+    });
+
+    let request_event = tokio::time::timeout(StdDuration::from_secs(1), async {
+        loop {
+            let event = rx.recv().await.expect("request_permissions event");
+            if let EventMsg::RequestPermissions(request) = event.msg {
+                break request;
+            }
+        }
+    })
+    .await
+    .expect("request_permissions event timed out");
+    assert_eq!(request_event.call_id, call_id);
+
+    session
+        .update_settings(SessionSettingsUpdate {
+            approval_policy: Some(AskForApproval::Never),
+            ..Default::default()
+        })
+        .await
+        .expect("runtime approval update should succeed");
+
+    assert_eq!(
+        turn_context.effective_approval_policy(),
+        AskForApproval::Never
+    );
+
+    let resolved_request = tokio::time::timeout(StdDuration::from_secs(1), async {
+        loop {
+            let event = rx.recv().await.expect("interactive resolution event");
+            if let EventMsg::InteractiveRequestResolved(resolved) = event.msg {
+                break resolved.request;
+            }
+        }
+    })
+    .await
+    .expect("interactive request resolved event timed out");
+    assert_eq!(
+        resolved_request,
+        codex_protocol::approvals::InteractiveRequestId::RequestPermissions {
+            call_id: call_id.clone(),
+        }
+    );
+
+    let response = tokio::time::timeout(StdDuration::from_secs(1), handle)
+        .await
+        .expect("request_permissions future timed out")
+        .expect("request_permissions join error");
+    assert_eq!(
+        response,
+        Some(
+            codex_protocol::request_permissions::RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+            }
+        )
+    );
+
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
 
 #[tokio::test]
@@ -7757,6 +7972,9 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
         .approval_policy
         .set(AskForApproval::OnFailure)
         .expect("test setup should allow updating approval policy");
+    let mut runtime_permissions = turn_context_raw.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnFailure;
+    turn_context_raw.replace_runtime_permissions(runtime_permissions);
     let session = Arc::new(session);
     let mut turn_context = Arc::new(turn_context_raw);
 
@@ -7867,6 +8085,9 @@ async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request()
         .approval_policy
         .set(AskForApproval::OnFailure)
         .expect("test setup should allow updating approval policy");
+    let mut runtime_permissions = turn_context_raw.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnFailure;
+    turn_context_raw.replace_runtime_permissions(runtime_permissions);
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context_raw);
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));

@@ -186,6 +186,10 @@ impl ThreadScopedOutgoingMessageSender {
             .await
     }
 
+    pub(crate) async fn cancel_request(&self, id: &RequestId) -> bool {
+        self.outgoing.cancel_request(id).await
+    }
+
     pub(crate) async fn send_response<T: Serialize>(
         &self,
         request_id: ConnectionRequestId,

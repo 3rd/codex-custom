@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::process::Command;
 use std::sync::OnceLock;
 
 use anyhow::Context;
@@ -48,6 +49,22 @@ fn extract_output_text(item: &Value) -> Option<&str> {
         Value::Object(obj) => obj.get("content").and_then(Value::as_str),
         _ => None,
     })
+}
+
+fn command_path(command: &str) -> String {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {command}"))
+        .output()
+        .unwrap_or_else(|error| panic!("failed to resolve command path for {command}: {error}"));
+    assert!(
+        output.status.success(),
+        "expected {command} to be available in PATH"
+    );
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|error| panic!("command path for {command} should be utf-8: {error}"))
+        .trim()
+        .to_string()
 }
 
 #[derive(Debug)]
@@ -381,9 +398,10 @@ async fn unified_exec_emits_exec_command_begin_event() -> Result<()> {
     let cwd = test.config.cwd.to_path_buf();
 
     let call_id = "uexec-begin-event";
+    let echo_command = format!("{} hello unified exec", command_path("echo"));
     let args = json!({
         "shell": "bash".to_string(),
-        "cmd": "/bin/echo hello unified exec".to_string(),
+        "cmd": echo_command,
         "yield_time_ms": 250,
     });
 
@@ -409,7 +427,13 @@ async fn unified_exec_emits_exec_command_begin_event() -> Result<()> {
     })
     .await;
 
-    assert_command(&begin_event.command, "-lc", "/bin/echo hello unified exec");
+    assert_command(
+        &begin_event.command,
+        "-lc",
+        args.get("cmd")
+            .and_then(Value::as_str)
+            .expect("exec command"),
+    );
 
     assert_eq!(begin_event.cwd.as_path(), cwd.as_path());
 
@@ -573,8 +597,9 @@ async fn unified_exec_emits_exec_command_end_event() -> Result<()> {
     let test = builder.build_remote_aware(&server).await?;
 
     let call_id = "uexec-end-event";
+    let echo_command = format!("{} END-EVENT", command_path("echo"));
     let args = json!({
-        "cmd": "/bin/echo END-EVENT".to_string(),
+        "cmd": echo_command,
         "yield_time_ms": 250,
     });
     let poll_call_id = "uexec-end-event-poll";
@@ -799,8 +824,9 @@ async fn unified_exec_emits_terminal_interaction_for_write_stdin() -> Result<()>
     let test = builder.build_remote_aware(&server).await?;
 
     let open_call_id = "uexec-open";
+    let bash_interactive = format!("{} -i", command_path("bash"));
     let open_args = json!({
-        "cmd": "/bin/bash -i",
+        "cmd": bash_interactive,
         "yield_time_ms": 200,
         "tty": true,
     });
@@ -1639,9 +1665,10 @@ async fn write_stdin_returns_exit_metadata_and_clears_session() -> Result<()> {
     let start_call_id = "uexec-cat-start";
     let send_call_id = "uexec-cat-send";
     let exit_call_id = "uexec-cat-exit";
+    let cat_command = command_path("cat");
 
     let start_args = serde_json::json!({
-        "cmd": "/bin/cat",
+        "cmd": cat_command,
         "yield_time_ms": 500,
         "tty": true,
     });
@@ -1791,8 +1818,9 @@ async fn unified_exec_emits_end_event_when_session_dies_via_stdin() -> Result<()
     let test = builder.build_remote_aware(&server).await?;
 
     let start_call_id = "uexec-end-on-exit-start";
+    let cat_command = command_path("cat");
     let start_args = serde_json::json!({
-        "cmd": "/bin/cat",
+        "cmd": cat_command,
         "yield_time_ms": 200,
         "tty": true,
     });
@@ -2074,8 +2102,9 @@ async fn unified_exec_reuses_session_via_stdin() -> Result<()> {
     let test = builder.build_remote_aware(&server).await?;
 
     let first_call_id = "uexec-start";
+    let cat_command = command_path("cat");
     let first_args = serde_json::json!({
-        "cmd": "/bin/cat",
+        "cmd": cat_command,
         "yield_time_ms": 200,
         "tty": true,
     });
@@ -2877,8 +2906,9 @@ async fn unified_exec_prunes_exited_sessions_first() -> Result<()> {
     const FILLER_SESSIONS: i32 = MAX_SESSIONS_FOR_TEST - 1;
 
     let keep_call_id = "uexec-prune-keep";
+    let cat_command = command_path("cat");
     let keep_args = serde_json::json!({
-        "cmd": "/bin/cat",
+        "cmd": cat_command,
         "yield_time_ms": 250,
         "tty": true,
     });

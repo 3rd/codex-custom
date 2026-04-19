@@ -257,19 +257,21 @@ pub(crate) fn apply_spawn_agent_runtime_overrides(
     config: &mut Config,
     turn: &TurnContext,
 ) -> Result<(), FunctionCallError> {
+    let runtime_permissions = turn.runtime_permissions();
     config
         .permissions
         .approval_policy
-        .set(turn.approval_policy.value())
+        .set(runtime_permissions.approval_policy)
         .map_err(|err| {
             FunctionCallError::RespondToModel(format!("approval_policy is invalid: {err}"))
         })?;
+    config.approvals_reviewer = runtime_permissions.approvals_reviewer;
     config.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     config.codex_linux_sandbox_exe = turn.codex_linux_sandbox_exe.clone();
     config.cwd = turn.cwd.clone();
     config
         .permissions
-        .set_permission_profile(turn.permission_profile())
+        .set_permission_profile(runtime_permissions.permission_profile)
         .map_err(|err| {
             FunctionCallError::RespondToModel(format!("permission_profile is invalid: {err}"))
         })?;

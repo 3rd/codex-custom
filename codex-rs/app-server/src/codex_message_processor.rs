@@ -211,6 +211,8 @@ use codex_app_server_protocol::ThreadUnsubscribeParams;
 use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::ThreadUnsubscribeStatus;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnContextUpdateParams;
+use codex_app_server_protocol::TurnContextUpdateResponse;
 use codex_app_server_protocol::TurnError;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
@@ -1097,6 +1099,10 @@ impl CodexMessageProcessor {
             }
             ClientRequest::TurnInterrupt { request_id, params } => {
                 self.turn_interrupt(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::TurnContextUpdate { request_id, params } => {
+                self.turn_context_update(to_connection_request_id(request_id), params)
                     .await;
             }
             ClientRequest::ThreadRealtimeStart { request_id, params } => {
@@ -7474,6 +7480,74 @@ impl CodexMessageProcessor {
                 self.outgoing.send_error(request_id, error).await;
             }
         }
+    }
+
+    async fn turn_context_update(
+        &self,
+        request_id: ConnectionRequestId,
+        params: TurnContextUpdateParams,
+    ) {
+        let (_, thread) = match self.load_thread(&params.thread_id).await {
+            Ok(v) => v,
+            Err(error) => {
+                self.outgoing.send_error(request_id, error).await;
+                return;
+            }
+        };
+
+        let collaboration_modes_config = CollaborationModesConfig {
+            default_mode_request_user_input: thread.enabled(Feature::DefaultModeRequestUserInput),
+        };
+        let collaboration_mode = params.collaboration_mode.map(|mode| {
+            self.normalize_turn_start_collaboration_mode(mode, collaboration_modes_config)
+        });
+
+        let has_any_overrides = params.cwd.is_some()
+            || params.approval_policy.is_some()
+            || params.approvals_reviewer.is_some()
+            || params.sandbox_policy.is_some()
+            || params.model.is_some()
+            || params.service_tier.is_some()
+            || params.effort.is_some()
+            || params.summary.is_some()
+            || collaboration_mode.is_some()
+            || params.personality.is_some();
+
+        if has_any_overrides {
+            if let Err(error) = self
+                .submit_core_op(
+                    &request_id,
+                    thread.as_ref(),
+                    Op::OverrideTurnContext {
+                        cwd: params.cwd,
+                        approval_policy: params.approval_policy.map(AskForApproval::to_core),
+                        approvals_reviewer: params
+                            .approvals_reviewer
+                            .map(codex_app_server_protocol::ApprovalsReviewer::to_core),
+                        sandbox_policy: params.sandbox_policy.map(|p| p.to_core()),
+                        windows_sandbox_level: None,
+                        model: params.model,
+                        effort: params.effort,
+                        summary: params.summary,
+                        service_tier: params.service_tier,
+                        collaboration_mode,
+                        personality: params.personality,
+                    },
+                )
+                .await
+            {
+                self.send_internal_error(
+                    request_id,
+                    format!("failed to update turn context: {error}"),
+                )
+                .await;
+                return;
+            }
+        }
+
+        self.outgoing
+            .send_response(request_id, TurnContextUpdateResponse {})
+            .await;
     }
 
     async fn prepare_realtime_conversation_thread(

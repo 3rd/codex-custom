@@ -33,6 +33,7 @@ use codex_core_skills::model::SkillMetadata;
 use codex_features::Features;
 use codex_file_search::FileMatch;
 use codex_plugin::PluginCapabilitySummary;
+use codex_protocol::protocol::InteractiveRequestId;
 use codex_protocol::request_user_input::RequestUserInputEvent;
 use codex_protocol::user_input::TextElement;
 use crossterm::event::KeyCode;
@@ -993,6 +994,14 @@ impl BottomPane {
         let modal = ApprovalOverlay::new(request, self.app_event_tx.clone(), features.clone());
         self.pause_status_timer_for_modal();
         self.push_view(Box::new(modal));
+    }
+
+    pub fn resolve_interactive_request(&mut self, request: &InteractiveRequestId) {
+        if let Some(view) = self.view_stack.last_mut()
+            && view.resolve_interactive_request(request)
+        {
+            self.request_redraw();
+        }
     }
 
     /// Called when the agent requests user input.

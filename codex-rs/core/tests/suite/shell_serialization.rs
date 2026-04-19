@@ -22,6 +22,7 @@ use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 use std::fs;
+use std::process::Command;
 use test_case::test_case;
 
 use crate::suite::apply_patch_cli::apply_patch_harness;
@@ -38,6 +39,22 @@ const FIXTURE_JSON: &str = r#"{
     }
 }
 "#;
+
+fn command_path(command: &str) -> String {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {command}"))
+        .output()
+        .expect("resolve command path");
+    assert!(
+        output.status.success(),
+        "expected {command} to be available in PATH"
+    );
+    String::from_utf8(output.stdout)
+        .expect("command path should be utf-8")
+        .trim()
+        .to_string()
+}
 
 fn shell_responses(
     call_id: &str,
@@ -133,7 +150,8 @@ async fn shell_output_stays_json_without_freeform_apply_patch(
     let test = builder.build(&server).await?;
 
     let call_id = "shell-json";
-    let responses = shell_responses(call_id, vec!["/bin/echo", "shell json"], output_type)?;
+    let echo_path = command_path("echo");
+    let responses = shell_responses(call_id, vec![echo_path.as_str(), "shell json"], output_type)?;
     let mock = mount_sse_sequence(&server, responses).await;
 
     test.submit_turn_with_policy(
@@ -189,7 +207,12 @@ async fn shell_output_is_structured_with_freeform_apply_patch(
     let test = builder.build(&server).await?;
 
     let call_id = "shell-structured";
-    let responses = shell_responses(call_id, vec!["/bin/echo", "freeform shell"], output_type)?;
+    let echo_path = command_path("echo");
+    let responses = shell_responses(
+        call_id,
+        vec![echo_path.as_str(), "freeform shell"],
+        output_type,
+    )?;
     let mock = mount_sse_sequence(&server, responses).await;
 
     test.submit_turn_with_policy(
@@ -240,11 +263,12 @@ async fn shell_output_preserves_fixture_json_without_serialization(
     let fixture_path = test.cwd.path().join("fixture.json");
     fs::write(&fixture_path, FIXTURE_JSON)?;
     let fixture_path_str = fixture_path.to_string_lossy().to_string();
+    let sed_path = command_path("sed");
 
     let call_id = "shell-json-fixture";
     let responses = shell_responses(
         call_id,
-        vec!["/usr/bin/sed", "-n", "p", fixture_path_str.as_str()],
+        vec![sed_path.as_str(), "-n", "p", fixture_path_str.as_str()],
         output_type,
     )?;
     let mock = mount_sse_sequence(&server, responses).await;
@@ -308,11 +332,12 @@ async fn shell_output_structures_fixture_with_serialization(
     let fixture_path = test.cwd.path().join("fixture.json");
     fs::write(&fixture_path, FIXTURE_JSON)?;
     let fixture_path_str = fixture_path.to_string_lossy().to_string();
+    let sed_path = command_path("sed");
 
     let call_id = "shell-structured-fixture";
     let responses = shell_responses(
         call_id,
-        vec!["/usr/bin/sed", "-n", "p", fixture_path_str.as_str()],
+        vec![sed_path.as_str(), "-n", "p", fixture_path_str.as_str()],
         output_type,
     )?;
     let mock = mount_sse_sequence(&server, responses).await;
@@ -916,10 +941,15 @@ async fn local_shell_call_output_is_structured() -> Result<()> {
     let test = builder.build(&server).await?;
 
     let call_id = "local-shell-call";
+    let echo_path = command_path("echo");
     let responses = vec![
         sse(vec![
             json!({"type": "response.created", "response": {"id": "resp-1"}}),
-            ev_local_shell_call(call_id, "completed", vec!["/bin/echo", "local shell"]),
+            ev_local_shell_call(
+                call_id,
+                "completed",
+                vec![echo_path.as_str(), "local shell"],
+            ),
             ev_completed("resp-1"),
         ]),
         sse(vec![

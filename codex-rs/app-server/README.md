@@ -170,6 +170,7 @@ Example with notification opt-out:
 - `thread/inject_items` — append raw Responses API items to a loaded thread’s model-visible history without starting a user turn; returns `{}` on success.
 - `turn/steer` — add user input to an already in-flight regular turn without starting a new turn; returns the active `turnId` that accepted the input. Review and manual compaction turns reject `turn/steer`.
 - `turn/interrupt` — request cancellation of an in-flight turn by `(thread_id, turn_id)`; success is an empty `{}` response and the turn finishes with `status: "interrupted"`.
+- `turn/contextUpdate` — update the current turn context and subsequent turn defaults for a loaded thread without adding user input. This is how clients switch permissions or model settings while a turn is already in progress.
 - `thread/realtime/start` — start a thread-scoped realtime session (experimental); pass `outputModality: "text"` or `outputModality: "audio"` to choose model output, returns `{}` and streams `thread/realtime/*` notifications. Omit `transport` for the websocket transport, or pass `{ "type": "webrtc", "sdp": "..." }` to create a WebRTC session from a browser-generated SDP offer; the remote answer SDP is emitted as `thread/realtime/sdp`.
 - `thread/realtime/appendAudio` — append an input audio chunk to the active realtime session (experimental); returns `{}`.
 - `thread/realtime/appendText` — append text input to the active realtime session (experimental); returns `{}`.
@@ -824,6 +825,20 @@ not emit `turn/started` and does not accept turn context overrides.
 `expectedTurnId` is required. If there is no active turn, `expectedTurnId` does not match the
 active turn, or the active turn kind does not accept same-turn steering (for example review or
 manual compaction), the request fails with an `invalid request` error.
+
+### Example: Update turn context mid-turn
+
+Use `turn/contextUpdate` to change live turn settings, such as switching a thread to full access
+while it is waiting on a command approval:
+
+```json
+{ "method": "turn/contextUpdate", "id": 33, "params": {
+    "threadId": "thr_123",
+    "approvalPolicy": "never",
+    "sandboxPolicy": { "type": "dangerFullAccess" }
+} }
+{ "id": 33, "result": {} }
+```
 
 ### Example: Request a code review
 

@@ -674,7 +674,50 @@ impl App {
                 self.refresh_in_memory_config_from_disk().await?;
                 Ok(true)
             }
-            AppCommandView::OverrideTurnContext { .. } => Ok(true),
+            AppCommandView::OverrideTurnContext {
+                cwd,
+                approval_policy,
+                approvals_reviewer,
+                sandbox_policy,
+                windows_sandbox_level: _windows_sandbox_level,
+                model,
+                effort,
+                summary,
+                service_tier,
+                collaboration_mode,
+                personality,
+            } => {
+                let has_supported_updates = cwd.is_some()
+                    || approval_policy.is_some()
+                    || approvals_reviewer.is_some()
+                    || sandbox_policy.is_some()
+                    || model.is_some()
+                    || effort.is_some()
+                    || summary.is_some()
+                    || service_tier.is_some()
+                    || collaboration_mode.is_some()
+                    || personality.is_some();
+                if !has_supported_updates {
+                    return Ok(false);
+                }
+
+                app_server
+                    .turn_context_update(codex_app_server_protocol::TurnContextUpdateParams {
+                        thread_id: thread_id.to_string(),
+                        cwd: (*cwd).clone(),
+                        approval_policy: (*approval_policy).clone().map(Into::into),
+                        approvals_reviewer: (*approvals_reviewer).clone().map(Into::into),
+                        sandbox_policy: (*sandbox_policy).clone().map(Into::into),
+                        model: (*model).clone(),
+                        service_tier: (*service_tier).clone(),
+                        effort: (*effort).clone().map(|effort| effort.map(Into::into)),
+                        summary: (*summary).clone().map(Into::into),
+                        personality: (*personality).clone(),
+                        collaboration_mode: (*collaboration_mode).clone(),
+                    })
+                    .await?;
+                Ok(true)
+            }
             AppCommandView::Other(Op::ApproveGuardianDeniedAction { event }) => {
                 app_server
                     .thread_approve_guardian_denied_action(thread_id, event)

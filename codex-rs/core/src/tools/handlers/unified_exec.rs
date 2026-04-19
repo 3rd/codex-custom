@@ -30,6 +30,7 @@ use codex_features::Feature;
 use codex_otel::SessionTelemetry;
 use codex_otel::TOOL_CALL_UNIFIED_EXEC_METRIC;
 use codex_protocol::models::AdditionalPermissionProfile;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TerminalInteractionEvent;
 use codex_shell_command::is_safe_command::is_known_safe_command;
@@ -253,6 +254,7 @@ impl ToolHandler for UnifiedExecHandler {
                     additional_permissions,
                 )
                 .await;
+                let runtime_permissions = context.turn.runtime_permissions();
                 let additional_permissions_allowed = exec_permission_approvals_enabled
                     || (session.features().enabled(Feature::RequestPermissionsTool)
                         && effective_additional_permissions.permissions_preapproved);
@@ -264,11 +266,11 @@ impl ToolHandler for UnifiedExecHandler {
                     .requests_sandbox_override()
                     && !effective_additional_permissions.permissions_preapproved
                     && !matches!(
-                        context.turn.approval_policy.value(),
-                        codex_protocol::protocol::AskForApproval::OnRequest
+                        runtime_permissions.approval_policy,
+                        AskForApproval::OnRequest
                     )
                 {
-                    let approval_policy = context.turn.approval_policy.value();
+                    let approval_policy = runtime_permissions.approval_policy;
                     manager.release_process_id(process_id).await;
                     return Err(FunctionCallError::RespondToModel(format!(
                         "approval policy is {approval_policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {approval_policy:?}"
@@ -288,7 +290,7 @@ impl ToolHandler for UnifiedExecHandler {
                     || {
                         normalize_and_validate_additional_permissions(
                             additional_permissions_allowed,
-                            context.turn.approval_policy.value(),
+                            runtime_permissions.approval_policy,
                             effective_additional_permissions.sandbox_permissions,
                             effective_additional_permissions.additional_permissions,
                             effective_additional_permissions.permissions_preapproved,

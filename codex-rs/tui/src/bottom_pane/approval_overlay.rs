@@ -27,6 +27,7 @@ use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::ElicitationAction;
 use codex_protocol::protocol::FileChange;
+use codex_protocol::protocol::InteractiveRequestId;
 use codex_protocol::protocol::NetworkApprovalContext;
 use codex_protocol::protocol::NetworkPolicyRuleAction;
 #[cfg(test)]
@@ -131,6 +132,37 @@ impl ApprovalRequest {
             _ => false,
         }
     }
+
+    fn matches_interactive_request(&self, request: &InteractiveRequestId) -> bool {
+        match (self, request) {
+            (
+                ApprovalRequest::Exec { id, .. },
+                InteractiveRequestId::ExecApproval { id: request_id },
+            )
+            | (
+                ApprovalRequest::ApplyPatch { id, .. },
+                InteractiveRequestId::ApplyPatch { id: request_id },
+            ) => id == request_id,
+            (
+                ApprovalRequest::Permissions { call_id, .. },
+                InteractiveRequestId::RequestPermissions {
+                    call_id: request_call_id,
+                },
+            ) => call_id == request_call_id,
+            (
+                ApprovalRequest::McpElicitation {
+                    server_name,
+                    request_id,
+                    ..
+                },
+                InteractiveRequestId::McpElicitation {
+                    server_name: request_server_name,
+                    request_id: request_request_id,
+                },
+            ) => server_name == request_server_name && request_id == request_request_id,
+            _ => false,
+        }
+    }
 }
 
 /// Modal overlay asking the user to approve or deny one or more requests.
@@ -189,6 +221,35 @@ impl ApprovalOverlay {
         self.current_request = Some(request);
         self.options = options;
         self.list = ListSelectionView::new(params, self.app_event_tx.clone());
+    }
+
+    fn remove_matching_request(&mut self, request: &InteractiveRequestId) -> bool {
+        if self
+            .current_request
+            .as_ref()
+            .is_some_and(|current| current.matches_interactive_request(request))
+        {
+            if self.queue.is_empty() {
+                self.current_request = None;
+                self.current_complete = true;
+                self.done = true;
+            } else {
+                let next_request = self.queue.remove(0);
+                self.set_current(next_request);
+            }
+            return true;
+        }
+
+        if let Some(index) = self
+            .queue
+            .iter()
+            .position(|queued| queued.matches_interactive_request(request))
+        {
+            self.queue.remove(index);
+            return true;
+        }
+
+        false
     }
 
     fn build_options(
@@ -528,6 +589,10 @@ impl BottomPaneView for ApprovalOverlay {
 
     fn dismiss_app_server_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
         self.dismiss_resolved_request(request)
+    }
+
+    fn resolve_interactive_request(&mut self, request: &InteractiveRequestId) -> bool {
+        self.remove_matching_request(request)
     }
 }
 
