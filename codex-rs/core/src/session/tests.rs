@@ -4017,7 +4017,7 @@ async fn pending_exec_approval_is_auto_approved_when_runtime_policy_switches_to_
                     "call-1".to_string(),
                     Some(approval_id),
                     vec!["echo".to_string(), "hello".to_string()],
-                    turn_context.cwd.to_path_buf(),
+                    turn_context.cwd.clone(),
                     Some("need shell".to_string()),
                     None,
                     None,

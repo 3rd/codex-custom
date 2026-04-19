@@ -80,6 +80,7 @@ use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::InteractiveRequestId;
+use codex_protocol::approvals::InteractiveRequestResolvedEvent;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::ApprovalsReviewer;
@@ -284,7 +285,9 @@ use crate::skills_watcher::SkillsWatcherEvent;
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
 use crate::state::PendingApprovalRequest;
+use crate::state::PendingInteractiveResolution;
 use crate::state::PendingRequestPermissions;
+use crate::state::RuntimeTurnPermissionsSnapshot;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 #[cfg(test)]
@@ -1290,7 +1293,14 @@ impl Session {
         &self,
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
-        let (previous_cwd, permission_profile_changed, next_cwd, codex_home, session_source) = {
+        let (
+            previous_cwd,
+            permission_profile_changed,
+            next_cwd,
+            codex_home,
+            session_source,
+            runtime_permissions,
+        ) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
@@ -1308,6 +1318,9 @@ impl Session {
             let next_cwd = updated.cwd.clone();
             let codex_home = updated.codex_home.clone();
             let session_source = updated.session_source.clone();
+            let runtime_permissions = updates
+                .runtime_permissions_only()
+                .map(|_| updated.runtime_turn_permissions_snapshot());
             state.session_configuration = updated;
             (
                 previous_cwd,
@@ -1315,6 +1328,7 @@ impl Session {
                 next_cwd,
                 codex_home,
                 session_source,
+                runtime_permissions,
             )
         };
 
@@ -1326,6 +1340,15 @@ impl Session {
         );
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()
+                .await;
+        }
+
+        if let Some(runtime_permissions) = runtime_permissions {
+            self.refresh_runtime_permissions_for_current_turn(&runtime_permissions)
+                .await;
+            self.refresh_pending_interactive_requests(&runtime_permissions)
+                .await;
+            self.refresh_runtime_permissions_for_mcp(&runtime_permissions)
                 .await;
         }
 
@@ -1364,6 +1387,103 @@ impl Session {
     pub(crate) async fn provider(&self) -> ModelProviderInfo {
         let state = self.state.lock().await;
         state.session_configuration.provider.clone()
+    }
+
+    async fn refresh_runtime_permissions_for_current_turn(
+        &self,
+        runtime_permissions: &RuntimeTurnPermissionsSnapshot,
+    ) {
+        let active = self.active_turn.lock().await;
+        let Some(active_turn) = active.as_ref() else {
+            return;
+        };
+
+        for task in active_turn.tasks.values() {
+            task.turn_context
+                .replace_runtime_permissions(runtime_permissions.clone());
+        }
+    }
+
+    async fn refresh_pending_interactive_requests(
+        &self,
+        runtime_permissions: &RuntimeTurnPermissionsSnapshot,
+    ) {
+        let (turn_context, resolved_requests) = {
+            let active = self.active_turn.lock().await;
+            let Some(active_turn) = active.as_ref() else {
+                return;
+            };
+            let Some((_, task)) = active_turn.tasks.first() else {
+                return;
+            };
+            let turn_context = Arc::clone(&task.turn_context);
+            let mut turn_state = active_turn.turn_state.lock().await;
+            (
+                turn_context,
+                turn_state.reevaluate_runtime_permissions(runtime_permissions),
+            )
+        };
+
+        for resolved in resolved_requests {
+            match resolved {
+                PendingInteractiveResolution::Approval {
+                    request,
+                    decision,
+                    tx,
+                } => {
+                    tx.send(decision).ok();
+                    self.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::InteractiveRequestResolved(InteractiveRequestResolvedEvent {
+                            turn_id: Some(turn_context.sub_id.clone()),
+                            request,
+                        }),
+                    )
+                    .await;
+                }
+                PendingInteractiveResolution::RequestPermissions {
+                    request,
+                    response,
+                    tx,
+                } => {
+                    tx.send(response).ok();
+                    self.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::InteractiveRequestResolved(InteractiveRequestResolvedEvent {
+                            turn_id: Some(turn_context.sub_id.clone()),
+                            request,
+                        }),
+                    )
+                    .await;
+                }
+                PendingInteractiveResolution::Elicitation {
+                    request,
+                    response,
+                    tx,
+                } => {
+                    tx.send(response).ok();
+                    self.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::InteractiveRequestResolved(InteractiveRequestResolvedEvent {
+                            turn_id: Some(turn_context.sub_id.clone()),
+                            request,
+                        }),
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+
+    async fn refresh_runtime_permissions_for_mcp(
+        &self,
+        runtime_permissions: &RuntimeTurnPermissionsSnapshot,
+    ) {
+        let mcp_connection_manager = self.services.mcp_connection_manager.read().await;
+        let approval_policy = Constrained::allow_any(runtime_permissions.approval_policy);
+        mcp_connection_manager.set_approval_policy(&approval_policy);
+        mcp_connection_manager
+            .set_permission_profile(runtime_permissions.permission_profile.clone());
     }
 
     pub(crate) async fn reload_user_config_layer(&self) {
@@ -1824,6 +1944,41 @@ impl Session {
         //  command-level approvals use `call_id`.
         // `approval_id` is only present for subcommand callbacks (execve intercept)
         let effective_approval_id = approval_id.clone().unwrap_or_else(|| call_id.clone());
+        let parsed_cmd = parse_command(&command);
+        let proposed_network_policy_amendments = network_approval_context.as_ref().map(|context| {
+            vec![
+                NetworkPolicyAmendment {
+                    host: context.host.clone(),
+                    action: NetworkPolicyRuleAction::Allow,
+                },
+                NetworkPolicyAmendment {
+                    host: context.host.clone(),
+                    action: NetworkPolicyRuleAction::Deny,
+                },
+            ]
+        });
+        let available_decisions = available_decisions.unwrap_or_else(|| {
+            ExecApprovalRequestEvent::default_available_decisions(
+                network_approval_context.as_ref(),
+                proposed_execpolicy_amendment.as_ref(),
+                proposed_network_policy_amendments.as_deref(),
+                additional_permissions.as_ref(),
+            )
+        });
+        let request_event = ExecApprovalRequestEvent {
+            call_id,
+            approval_id,
+            turn_id: turn_context.sub_id.clone(),
+            command,
+            cwd,
+            reason,
+            network_approval_context,
+            proposed_execpolicy_amendment,
+            proposed_network_policy_amendments,
+            additional_permissions,
+            available_decisions: Some(available_decisions),
+            parsed_cmd,
+        };
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
         let prev_entry = {
@@ -1847,43 +2002,8 @@ impl Session {
         if prev_entry.is_some() {
             warn!("Overwriting existing pending approval for call_id: {effective_approval_id}");
         }
-
-        let parsed_cmd = parse_command(&command);
-        let proposed_network_policy_amendments = network_approval_context.as_ref().map(|context| {
-            vec![
-                NetworkPolicyAmendment {
-                    host: context.host.clone(),
-                    action: NetworkPolicyRuleAction::Allow,
-                },
-                NetworkPolicyAmendment {
-                    host: context.host.clone(),
-                    action: NetworkPolicyRuleAction::Deny,
-                },
-            ]
-        });
-        let available_decisions = available_decisions.unwrap_or_else(|| {
-            ExecApprovalRequestEvent::default_available_decisions(
-                network_approval_context.as_ref(),
-                proposed_execpolicy_amendment.as_ref(),
-                proposed_network_policy_amendments.as_deref(),
-                additional_permissions.as_ref(),
-            )
-        });
-        let event = EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-            call_id,
-            approval_id,
-            turn_id: turn_context.sub_id.clone(),
-            command,
-            cwd,
-            reason,
-            network_approval_context,
-            proposed_execpolicy_amendment,
-            proposed_network_policy_amendments,
-            additional_permissions,
-            available_decisions: Some(available_decisions),
-            parsed_cmd,
-        });
-        self.send_event(turn_context, event).await;
+        self.send_event(turn_context, EventMsg::ExecApprovalRequest(request_event))
+            .await;
         rx_approve.await.unwrap_or(ReviewDecision::Abort)
     }
 
@@ -1899,9 +2019,16 @@ impl Session {
         reason: Option<String>,
         grant_root: Option<PathBuf>,
     ) -> oneshot::Receiver<ReviewDecision> {
+        let request_event = ApplyPatchApprovalRequestEvent {
+            call_id,
+            turn_id: turn_context.sub_id.clone(),
+            changes,
+            reason,
+            grant_root,
+        };
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
-        let approval_id = call_id.clone();
+        let approval_id = request_event.call_id.clone();
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
@@ -1923,15 +2050,11 @@ impl Session {
         if prev_entry.is_some() {
             warn!("Overwriting existing pending approval for call_id: {approval_id}");
         }
-
-        let event = EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
-            call_id,
-            turn_id: turn_context.sub_id.clone(),
-            changes,
-            reason,
-            grant_root,
-        });
-        self.send_event(turn_context, event).await;
+        self.send_event(
+            turn_context,
+            EventMsg::ApplyPatchApprovalRequest(request_event),
+        )
+        .await;
         rx_approve
     }
 
@@ -1964,7 +2087,7 @@ impl Session {
         cwd: AbsolutePathBuf,
         cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
-        match turn_context.as_ref().approval_policy.value() {
+        match turn_context.effective_approval_policy() {
             AskForApproval::Never => {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
@@ -2341,8 +2464,8 @@ impl Session {
             }
         };
         match entry {
-            Some(tx_approve) => {
-                tx_approve.send(decision).ok();
+            Some(entry) => {
+                entry.tx.send(decision).ok();
             }
             None => {
                 warn!("No pending approval found for call_id: {approval_id}");

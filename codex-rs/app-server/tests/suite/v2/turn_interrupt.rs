@@ -409,8 +409,7 @@ async fn turn_context_update_resolves_pending_command_approval_when_switching_to
         mcp.read_stream_until_response_message(RequestId::Integer(update_id)),
     )
     .await??;
-    let _resp: TurnContextUpdateResponse =
-        to_response::<TurnContextUpdateResponse>(update_resp)?;
+    let _resp: TurnContextUpdateResponse = to_response::<TurnContextUpdateResponse>(update_resp)?;
 
     let resolved_notification = timeout(
         DEFAULT_READ_TIMEOUT,

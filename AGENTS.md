@@ -23,20 +23,34 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
   - `codex-rs/shell-command/src/command_safety/is_dangerous_command.rs`
   - `codex-rs/core/src/exec_policy.rs`
   - Leading `rtk` wrapper tokens are stripped before shell auto-approval heuristics and execpolicy matching so `rtk ls -la` is treated like `ls -la` for approval purposes.
-- Current fork-only project-doc fallback behavior lives in `codex-rs/core/src/project_doc.rs`:
+- Current fork-only project-doc fallback behavior lives in `codex-rs/core/src/agents_md.rs`:
   - Built-in fallback discovery also recognizes `CLAUDE.md` and `.claude/CLAUDE.md` when `AGENTS.md` is absent.
   - `AGENTS.md` remains preferred within a directory, and only one project doc is used per directory when walking toward `cwd`.
 - Current fork-only repo skill-root fallback lives in `codex-rs/core-skills/src/loader.rs`:
   - Repo-local `.agents/skills` remains the preferred project skill directory.
   - Repo-local `.claude/skills` is used only as a fallback when `.agents/skills` is absent.
+- Current fork-only live turn context update behavior lives in:
+  - `codex-rs/app-server-protocol/src/protocol/common.rs`
+  - `codex-rs/app-server-protocol/src/protocol/v2.rs`
+  - `codex-rs/app-server/src/codex_message_processor.rs`
+  - `codex-rs/core/src/session/handlers.rs`
+  - `codex-rs/core/src/state/turn.rs`
+  - `codex-rs/tui/src/app_server_session.rs`
+  - `codex-rs/tui/src/bottom_pane/approval_overlay.rs`
+  - `codex-rs/tui/src/chatwidget/interrupts.rs`
+  - `turn/contextUpdate` updates the active turn and subsequent defaults without new user input, and re-evaluates pending interactive requests when runtime permissions change.
 - Regression coverage for the fork patch lives in `codex-rs/core/src/mcp_tool_call_tests.rs`. If you touch this behavior, rerun focused `codex-core` tests before doing anything broader.
 - Regression coverage for the `rtk` shell approval mod lives in:
   - `codex-rs/shell-command/src/bash.rs`
   - `codex-rs/shell-command/src/command_safety/is_safe_command.rs`
   - `codex-rs/shell-command/src/command_safety/is_dangerous_command.rs`
   - `codex-rs/core/src/exec_policy_tests.rs`
-- Regression coverage for the project-doc fallback mod lives in `codex-rs/core/src/project_doc_tests.rs`.
+- Regression coverage for the project-doc fallback mod lives in `codex-rs/core/src/agents_md_tests.rs`.
 - Regression coverage for the repo skill-root fallback mod lives in `codex-rs/core-skills/src/loader_tests.rs`.
+- Regression coverage for the live turn context update mod lives in:
+  - `codex-rs/app-server/tests/suite/v2/turn_interrupt.rs`
+  - `codex-rs/core/src/session/tests.rs`
+  - `codex-rs/tui/src/chatwidget/tests/permissions.rs`
 - When carrying local mods in `codex-rs/tui`:
   - Prefer TUI-local changes over protocol or app-server surface changes unless the mod truly needs a new cross-process concept.
   - When a mod spans behavior and rendering, expect to touch state, permission/config plumbing, visible UI, tests, and snapshots together.
@@ -55,10 +69,11 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 3. Refresh with `make sync` before starting a new patch or after upstream moves.
 4. Build with `make build`; install with `make install` only when you want to replace your local `codex` binary.
 5. When patching approval behavior, inspect both `codex-rs/core/src/mcp_tool_call.rs` and `codex-rs/core/src/mcp_tool_call_tests.rs`; this fork already carries behavior that intentionally diverges from upstream.
-6. When patching project-doc discovery, inspect both `codex-rs/core/src/project_doc.rs` and `codex-rs/core/src/project_doc_tests.rs`.
+6. When patching project-doc discovery, inspect both `codex-rs/core/src/agents_md.rs` and `codex-rs/core/src/agents_md_tests.rs`.
 7. When patching repo skill discovery, inspect both `codex-rs/core-skills/src/loader.rs` and `codex-rs/core-skills/src/loader_tests.rs`.
-8. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
-9. If upstream absorbs a custom patch, remove the fork-specific note here and collapse back to upstream workflow.
+8. When patching live turn context updates, inspect the app-server protocol surface, the session/state owner, and the TUI request-resolution owners together.
+9. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
+10. If upstream absorbs a custom patch, remove the fork-specific note here and collapse back to upstream workflow.
 
 ## Maintaining Local Mods After Upstream Sync
 
@@ -68,28 +83,32 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
    - `codex-rs/core/src/mcp_tool_call.rs`
    - `codex-rs/core/src/mcp_tool_call_tests.rs`
 4. Re-validate the project-doc fallback patch in:
-   - `codex-rs/core/src/project_doc.rs`
-   - `codex-rs/core/src/project_doc_tests.rs`
+   - `codex-rs/core/src/agents_md.rs`
+   - `codex-rs/core/src/agents_md_tests.rs`
 5. Re-validate the repo skill-root fallback patch in:
    - `codex-rs/core-skills/src/loader.rs`
    - `codex-rs/core-skills/src/loader_tests.rs`
-6. Re-validate each local TUI mod by finding:
+6. Re-validate the live turn context update patch in:
+   - `codex-rs/app-server/tests/suite/v2/turn_interrupt.rs`
+   - `codex-rs/core/src/session/tests.rs`
+   - `codex-rs/tui/src/chatwidget/tests/permissions.rs`
+7. Re-validate each local TUI mod by finding:
    - the main behavior file
    - the visible rendering file
    - the test files that prove the behavior
    - the accepted snapshots, if the mod changes user-visible output
-7. Look for upstream changes in the seams that usually break local mods:
+8. Look for upstream changes in the seams that usually break local mods:
    - state flow and ownership boundaries
    - permission/config override plumbing
    - UI rendering and snapshot layouts
    - keybinding or command-dispatch paths
-8. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
-9. After reapplying or adjusting a local mod, run:
+9. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
+10. After reapplying or adjusting a local mod, run:
    - `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fmt'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fix -p codex-tui'`
-10. When a local mod is no longer needed because upstream absorbed it or the workflow changed, remove the patch instead of carrying dead divergence.
-11. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
+11. When a local mod is no longer needed because upstream absorbed it or the workflow changed, remove the patch instead of carrying dead divergence.
+12. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
 
 # Rust/codex-rs
 

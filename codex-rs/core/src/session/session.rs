@@ -1,5 +1,6 @@
 use super::*;
 use crate::goals::GoalRuntimeState;
+use crate::state::RuntimeTurnPermissionsSnapshot;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use tokio::sync::Semaphore;
@@ -133,6 +134,22 @@ impl SessionConfiguration {
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
             personality: self.personality,
             session_source: self.session_source.clone(),
+        }
+    }
+
+    pub(super) fn runtime_turn_permissions_snapshot(&self) -> RuntimeTurnPermissionsSnapshot {
+        let permission_profile = self.permission_profile();
+        let sandbox_policy = self.sandbox_policy();
+        let (file_system_sandbox_policy, network_sandbox_policy) =
+            permission_profile.to_runtime_permissions();
+        RuntimeTurnPermissionsSnapshot {
+            approval_policy: self.approval_policy.value(),
+            approvals_reviewer: self.approvals_reviewer,
+            permission_profile,
+            sandbox_policy,
+            file_system_sandbox_policy,
+            network_sandbox_policy,
+            windows_sandbox_level: self.windows_sandbox_level,
         }
     }
 
@@ -298,6 +315,35 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) personality: Option<Personality>,
     pub(crate) app_server_client_name: Option<String>,
     pub(crate) app_server_client_version: Option<String>,
+}
+
+impl SessionSettingsUpdate {
+    pub(super) fn runtime_permissions_only(&self) -> Option<Self> {
+        if self.approval_policy.is_none()
+            && self.approvals_reviewer.is_none()
+            && self.sandbox_policy.is_none()
+            && self.permission_profile.is_none()
+            && self.windows_sandbox_level.is_none()
+        {
+            return None;
+        }
+
+        Some(Self {
+            cwd: None,
+            approval_policy: self.approval_policy,
+            approvals_reviewer: self.approvals_reviewer,
+            sandbox_policy: self.sandbox_policy.clone(),
+            permission_profile: self.permission_profile.clone(),
+            windows_sandbox_level: self.windows_sandbox_level,
+            collaboration_mode: None,
+            reasoning_summary: None,
+            service_tier: None,
+            final_output_json_schema: None,
+            personality: None,
+            app_server_client_name: None,
+            app_server_client_version: None,
+        })
+    }
 }
 
 pub(crate) struct AppServerClientMetadata {

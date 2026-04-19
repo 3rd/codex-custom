@@ -41,8 +41,8 @@ use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 use serial_test::serial;
-use tempfile::TempDir;
 use std::process::Command;
+use tempfile::TempDir;
 
 fn tool_names(body: &Value) -> Vec<String> {
     body.get("tools")
