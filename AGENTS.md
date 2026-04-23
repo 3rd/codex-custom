@@ -5,10 +5,12 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 - Treat `main` as a clean mirror of `openai/main`.
 - Treat `custom` as the only long-lived branch for local patches.
 - Do not land custom work on `main`. The root `Makefile` will fast-forward `main` to upstream and push that mirror to `origin/main`.
+- Use `CUSTOM_MODS.md` as the behavior manifest for fork-only mods. `git log main..custom` is the commit inventory; the manifest is the behavior intent agents must preserve after upstream moves.
 - Use the root `Makefile` as the source of truth for repo operations:
-  - `make sync-main`: ensure the `openai` remote exists and points at `https://github.com/openai/codex.git`, fetch `openai/main`, fast-forward local `main`, then push it to `origin/main`. It refuses to move `main` if local `main` contains commits not present in upstream, or if `main` is checked out and dirty.
-  - `make rebase-custom`: run only from `custom`. It autostashes tracked and untracked changes, rebases `custom` onto local `main`, then restores the stash on success. If the rebase fails, resolve conflicts manually and the autostash is left in `git stash`.
+  - `make sync-main`: ensure the `openai` remote exists and points at `https://github.com/openai/codex.git`, ensure the mirror remote defaults to `origin` and points at `github_3rd:3rd/codex-custom`, fetch `openai/main`, fast-forward local `main`, then push that mirror to `origin/main`. It refuses to move `main` if local `main` contains commits not present in upstream, or if `main` is checked out and dirty.
+  - `make rebase-custom`: run only from `custom` with a clean worktree. It rebases `custom` onto local `main`; if the worktree is dirty or the rebase fails, resolve the blocker manually and rerun the supported flow.
   - `make sync` or `make update-custom`: the normal refresh flow. Sync `main` from upstream, then rebase `custom` on top.
+  - `make sync-checklist`: print branch state, remotes, fork-only commits, and the standard targeted verification commands without mutating branches.
   - `make build`: run only from `custom`. It enters `nix develop`, sets `CARGO_HOME=/tmp/codex-custom-cargo-home`, and builds `codex-rs` with `cargo build -p codex-cli --bin codex --profile local-release`.
   - `make install`: build and install the custom binary to `$(HOME)/.local/bin/codex` by default. Override `PREFIX` or `BIN_DIR` if needed.
 - `codex-rs/Cargo.toml` defines `profile.local-release` specifically for this fork. It keeps release settings but disables LTO and raises codegen units to speed up local custom builds.
@@ -67,48 +69,53 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 1. Keep `main` disposable and upstream-aligned.
 2. Do patch work on `custom`.
 3. Refresh with `make sync` before starting a new patch or after upstream moves.
-4. Build with `make build`; install with `make install` only when you want to replace your local `codex` binary.
-5. When patching approval behavior, inspect both `codex-rs/core/src/mcp_tool_call.rs` and `codex-rs/core/src/mcp_tool_call_tests.rs`; this fork already carries behavior that intentionally diverges from upstream.
-6. When patching project-doc discovery, inspect both `codex-rs/core/src/agents_md.rs` and `codex-rs/core/src/agents_md_tests.rs`.
-7. When patching repo skill discovery, inspect both `codex-rs/core-skills/src/loader.rs` and `codex-rs/core-skills/src/loader_tests.rs`.
-8. When patching live turn context updates, inspect the app-server protocol surface, the session/state owner, and the TUI request-resolution owners together.
-9. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
-10. If upstream absorbs a custom patch, remove the fork-specific note here and collapse back to upstream workflow.
+4. Before adapting mods, read `CUSTOM_MODS.md` and run `make sync-checklist`.
+5. Build with `make build`; install with `make install` only when you want to replace your local `codex` binary.
+6. When patching approval behavior, inspect both `codex-rs/core/src/mcp_tool_call.rs` and `codex-rs/core/src/mcp_tool_call_tests.rs`; this fork already carries behavior that intentionally diverges from upstream.
+7. When patching project-doc discovery, inspect both `codex-rs/core/src/agents_md.rs` and `codex-rs/core/src/agents_md_tests.rs`.
+8. When patching repo skill discovery, inspect both `codex-rs/core-skills/src/loader.rs` and `codex-rs/core-skills/src/loader_tests.rs`.
+9. When patching live turn context updates, inspect the app-server protocol surface, the session/state owner, and the TUI request-resolution owners together.
+10. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
+11. If upstream absorbs a custom patch, confirm with the user before retiring it, update `CUSTOM_MODS.md`, remove the fork-specific note here, and collapse back to upstream workflow.
 
 ## Maintaining Local Mods After Upstream Sync
 
-1. Run `make sync` from `custom`.
-2. If the rebase hits conflicts, check whether upstream touched the same behavior before blindly replaying a fork patch.
-3. Re-validate the MCP patch in:
+1. Start from `custom` with a clean worktree.
+2. Read `CUSTOM_MODS.md`, then run `make sync-checklist`.
+3. Run `make sync` from `custom`.
+4. If the rebase hits conflicts, check whether upstream touched the same behavior before blindly replaying a fork patch.
+5. For each mod, compare the manifest behavior contract against current upstream and classify it as `retain/port`, `retire pending confirmation`, or `blocked`.
+6. Re-validate the MCP patch in:
    - `codex-rs/core/src/mcp_tool_call.rs`
    - `codex-rs/core/src/mcp_tool_call_tests.rs`
-4. Re-validate the project-doc fallback patch in:
+7. Re-validate the project-doc fallback patch in:
    - `codex-rs/core/src/agents_md.rs`
    - `codex-rs/core/src/agents_md_tests.rs`
-5. Re-validate the repo skill-root fallback patch in:
+8. Re-validate the repo skill-root fallback patch in:
    - `codex-rs/core-skills/src/loader.rs`
    - `codex-rs/core-skills/src/loader_tests.rs`
-6. Re-validate the live turn context update patch in:
+9. Re-validate the live turn context update patch in:
    - `codex-rs/app-server/tests/suite/v2/turn_interrupt.rs`
    - `codex-rs/core/src/session/tests.rs`
    - `codex-rs/tui/src/chatwidget/tests/permissions.rs`
-7. Re-validate each local TUI mod by finding:
+10. Re-validate each local TUI mod by finding:
    - the main behavior file
    - the visible rendering file
    - the test files that prove the behavior
    - the accepted snapshots, if the mod changes user-visible output
-8. Look for upstream changes in the seams that usually break local mods:
+11. Look for upstream changes in the seams that usually break local mods:
    - state flow and ownership boundaries
    - permission/config override plumbing
    - UI rendering and snapshot layouts
    - keybinding or command-dispatch paths
-9. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
-10. After reapplying or adjusting a local mod, run:
+12. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
+13. If a mod's behavior, owner files, tests, or retirement status changes, update `CUSTOM_MODS.md` and this file in the same change.
+14. After reapplying or adjusting a local mod, run:
    - `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fmt'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fix -p codex-tui'`
-11. When a local mod is no longer needed because upstream absorbed it or the workflow changed, remove the patch instead of carrying dead divergence.
-12. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
+15. When a local mod is no longer needed because upstream absorbed it or the workflow changed, confirm with the user before removing the patch instead of carrying dead divergence.
+16. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
 
 # Rust/codex-rs
 

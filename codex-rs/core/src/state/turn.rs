@@ -410,9 +410,7 @@ impl TurnState {
             match response {
                 Some(response) => {
                     resolved.push(PendingInteractiveResolution::RequestPermissions {
-                        request: InteractiveRequestId::RequestPermissions {
-                            call_id: key,
-                        },
+                        request: InteractiveRequestId::RequestPermissions { call_id: key },
                         response,
                         tx: request.tx_response,
                     });
