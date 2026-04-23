@@ -27,26 +27,30 @@ Produce or execute a fork refresh for this repo with:
   - `make sync-main`
   - `make rebase-custom`
   - `make sync`
-- Use `rtk` to wrap shell commands in this repo.
+  - `make sync-checklist`
+- Repo-root `CUSTOM_MODS.md` is the behavior manifest for fork-only mods.
 
 ## Process
 
 ### 1. Ground In Repo Truth
 
-- Read the custom-fork sections in repo-root `AGENTS.md` and the sync targets in repo-root `Makefile`.
+- Read the custom-fork sections in repo-root `AGENTS.md`, repo-root `CUSTOM_MODS.md`, and the sync targets in repo-root `Makefile`.
 - Confirm branch and worktree state before doing anything:
-  - `rtk git status --short --branch`
-  - `rtk git remote -v`
+  - `git status --short --branch`
+  - `git remote -v`
+- Run the non-mutating sync checklist:
+  - `make sync-checklist`
 - Enumerate fork-only commits in chronological order:
-  - `rtk git log --reverse --oneline main..custom`
+  - `git log --reverse --oneline main..custom`
 - For each fork-only commit, inspect the scope before touching code:
-  - `rtk git show --stat --summary <sha>`
-- Treat `git log main..custom` as the real inventory. `AGENTS.md` may lag and should be updated if it no longer matches the active fork.
+  - `git show --stat --summary <sha>`
+- Treat `git log main..custom` as the real commit inventory. Treat `CUSTOM_MODS.md` as the behavior intent. `AGENTS.md` may lag and should be updated if it no longer matches the active fork.
 
 ### 2. Run The Supported Sync Flow
 
 - Work from `custom`.
-- Run `rtk make sync`.
+- Start with a clean worktree; `make rebase-custom` refuses dirty tracked or untracked changes.
+- Run `make sync`.
 - If the repo is on the wrong branch, dirty in a way the workflow refuses, or the rebase fails, report the exact blocker first.
 - When rebasing, resolve conflicts against current upstream behavior and the original purpose of the local mod. Do not replay old hunks blindly.
 - Never land custom work on `main`.
@@ -55,7 +59,9 @@ Produce or execute a fork refresh for this repo with:
 
 - Walk fork-only commits oldest to newest. Finish one mod before moving to the next.
 - For each mod:
+  - read the matching entry in `CUSTOM_MODS.md`
   - compare the original commit intent against the post-sync upstream tree
+  - compare the manifest behavior contract against current upstream behavior
   - identify current owner files, tests, and snapshots
   - classify the mod as `retain/port`, `retire`, or `blocked`
 - `retain/port`:
@@ -68,6 +74,7 @@ Produce or execute a fork refresh for this repo with:
 - `blocked`:
   - stop at the concrete blocker, state what was attempted, and leave the repo in a recoverable state
 - If a mod's ownership, validation path, or maintenance notes change, update repo-root `AGENTS.md`.
+- If a mod's behavior contract, owner areas, targeted checks, adaptation notes, or retirement status changes, update repo-root `CUSTOM_MODS.md`.
 - Do not push `custom` automatically. Leave pushing as a separate, explicit step unless the user asks for it.
 
 ### 4. Verify Each Mod Before Continuing
@@ -75,7 +82,7 @@ Produce or execute a fork refresh for this repo with:
 - For the sync workflow and MCP approval patch in `codex-rs/core`:
   - run the smallest targeted `codex-core` test coverage for `mcp_tool_call`
 - For Claude project doc fallbacks in `codex-rs/core`:
-  - run the smallest targeted `codex-core` test coverage for `project_doc`
+  - run the smallest targeted `codex-core` test coverage for `agents_md`
 - For repo `.claude/skills` fallback in `codex-rs/core-skills`:
   - run targeted `codex-core-skills` loader coverage
 - For the danger-mode TUI mod in `codex-rs/tui`:
@@ -105,8 +112,10 @@ Keep the write-up concise, but do not skip:
 ## Gotchas
 
 - `make sync` is the supported entrypoint. Do not replace it with an improvised fetch/reset/rebase sequence.
+- `make sync-main` validates both the upstream remote and the mirror remote before pushing `main`.
+- `make rebase-custom` requires a clean worktree; stash or commit local work before syncing.
 - Never retire a mod without user confirmation, even if upstream looks equivalent.
-- `AGENTS.md` is required context, but it is not a complete fork inventory today. `git log main..custom` wins.
+- `AGENTS.md` is required context, but it is not a complete fork inventory today. `git log main..custom` wins for commits; `CUSTOM_MODS.md` wins for behavior intent.
 - TUI mods can span state, rendering, tests, and snapshots together. Treat them as one unit.
 
 ## Common Pitfalls
@@ -120,10 +129,13 @@ Keep the write-up concise, but do not skip:
 ## Checklist
 
 - [ ] Preflight state captured from `custom`
+- [ ] `CUSTOM_MODS.md` read and used as the behavior map
+- [ ] `make sync-checklist` run before mutating sync commands
 - [ ] Fork-only commit list derived from `git log main..custom`
 - [ ] `make sync` used instead of a custom sync sequence
 - [ ] Each mod handled in chronological order with `retain/port`, `retire`, or `blocked`
 - [ ] Any retirement decision paused for user confirmation
 - [ ] Targeted verification run for each touched mod
+- [ ] Repo-root `CUSTOM_MODS.md` updated if behavior ownership or verification changed
 - [ ] Repo-root `AGENTS.md` updated if the fork maintenance map changed
 - [ ] No automatic push of `custom`
