@@ -7506,6 +7506,7 @@ impl CodexMessageProcessor {
             || params.approval_policy.is_some()
             || params.approvals_reviewer.is_some()
             || params.sandbox_policy.is_some()
+            || params.permission_profile.is_some()
             || params.model.is_some()
             || params.service_tier.is_some()
             || params.effort.is_some()
@@ -7513,8 +7514,8 @@ impl CodexMessageProcessor {
             || collaboration_mode.is_some()
             || params.personality.is_some();
 
-        if has_any_overrides {
-            if let Err(error) = self
+        if has_any_overrides
+            && let Err(error) = self
                 .submit_core_op(
                     &request_id,
                     thread.as_ref(),
@@ -7525,6 +7526,7 @@ impl CodexMessageProcessor {
                             .approvals_reviewer
                             .map(codex_app_server_protocol::ApprovalsReviewer::to_core),
                         sandbox_policy: params.sandbox_policy.map(|p| p.to_core()),
+                        permission_profile: params.permission_profile.map(Into::into),
                         windows_sandbox_level: None,
                         model: params.model,
                         effort: params.effort,
@@ -7535,14 +7537,13 @@ impl CodexMessageProcessor {
                     },
                 )
                 .await
-            {
-                self.send_internal_error(
-                    request_id,
-                    format!("failed to update turn context: {error}"),
-                )
-                .await;
-                return;
-            }
+        {
+            self.send_internal_error(
+                request_id,
+                format!("failed to update turn context: {error}"),
+            )
+            .await;
+            return;
         }
 
         self.outgoing

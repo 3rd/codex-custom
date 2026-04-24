@@ -11135,7 +11135,7 @@ impl ChatWidget {
         }
 
         if permissions.approval_policy == AskForApproval::OnRequest {
-            if permissions.approvals_reviewer == ApprovalsReviewer::GuardianSubagent
+            if permissions.approvals_reviewer == ApprovalsReviewer::AutoReview
                 && matches!(
                     permissions.sandbox_policy,
                     SandboxPolicy::WorkspaceWrite { .. }

@@ -17049,6 +17049,17 @@
               "null"
             ]
           },
+          "permissionProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/PermissionProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override the permission profile for the current turn, if any, and subsequent turns."
+          },
           "personality": {
             "anyOf": [
               {

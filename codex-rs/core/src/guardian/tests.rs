@@ -938,7 +938,7 @@ async fn routes_approval_to_guardian_requires_guardian_reviewer() {
     config.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn.config = Arc::new(config);
     let mut runtime_permissions = turn.runtime_permissions();
-    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn.replace_runtime_permissions(runtime_permissions);
 
     assert!(routes_approval_to_guardian(&turn));
@@ -950,6 +950,9 @@ async fn routes_approval_to_guardian_allows_granular_review_policy() {
     let mut config = (*turn.config).clone();
     config.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn.config = Arc::new(config);
+    let mut runtime_permissions = turn.runtime_permissions();
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn.replace_runtime_permissions(runtime_permissions);
     turn.approval_policy
         .set(AskForApproval::Granular(GranularApprovalConfig {
             sandbox_approval: true,

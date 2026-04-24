@@ -8,6 +8,7 @@ import type { ReasoningSummary } from "../ReasoningSummary";
 import type { ServiceTier } from "../ServiceTier";
 import type { ApprovalsReviewer } from "./ApprovalsReviewer";
 import type { AskForApproval } from "./AskForApproval";
+import type { PermissionProfile } from "./PermissionProfile";
 import type { SandboxPolicy } from "./SandboxPolicy";
 
 export type TurnContextUpdateParams = {threadId: string, /**
@@ -27,6 +28,10 @@ approvalsReviewer?: ApprovalsReviewer | null, /**
  * subsequent turns.
  */
 sandboxPolicy?: SandboxPolicy | null, /**
+ * Override the permission profile for the current turn, if any, and
+ * subsequent turns.
+ */
+permissionProfile?: PermissionProfile | null, /**
  * Override the model for the current turn, if any, and subsequent turns.
  */
 model?: string | null, /**

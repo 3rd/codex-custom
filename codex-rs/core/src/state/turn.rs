@@ -226,6 +226,10 @@ impl TurnState {
         self.pending_dynamic_tools.clear();
     }
 
+    pub(crate) fn clear_pending(&mut self) {
+        self.clear_pending_interactive_requests();
+    }
+
     pub(crate) fn insert_pending_request_permissions(
         &mut self,
         key: String,
@@ -394,11 +398,13 @@ impl TurnState {
                 AskForApproval::Never => Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 }),
                 AskForApproval::Granular(granular) if !granular.allows_request_permissions() => {
                     Some(RequestPermissionsResponse {
                         permissions: RequestPermissionProfile::default(),
                         scope: PermissionGrantScope::Turn,
+                        strict_auto_review: false,
                     })
                 }
                 AskForApproval::UnlessTrusted
@@ -468,6 +474,11 @@ impl ActiveTurn {
     pub(crate) async fn clear_pending_interactive_requests(&self) {
         let mut ts = self.turn_state.lock().await;
         ts.clear_pending_interactive_requests();
+    }
+
+    pub(crate) async fn clear_pending(&self) {
+        let mut ts = self.turn_state.lock().await;
+        ts.clear_pending();
     }
 }
 

@@ -5359,6 +5359,10 @@ pub struct TurnContextUpdateParams {
     /// subsequent turns.
     #[ts(optional = nullable)]
     pub sandbox_policy: Option<SandboxPolicy>,
+    /// Override the permission profile for the current turn, if any, and
+    /// subsequent turns.
+    #[ts(optional = nullable)]
+    pub permission_profile: Option<PermissionProfile>,
     /// Override the model for the current turn, if any, and subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,

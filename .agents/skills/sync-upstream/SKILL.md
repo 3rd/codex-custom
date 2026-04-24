@@ -91,7 +91,10 @@ Produce or execute a fork refresh for this repo with:
   - then run `just fmt`
   - then run `just fix -p codex-tui`
 - For other Rust edits, follow the crate-specific verification rules in repo-root `AGENTS.md`.
-- Ask before running a full workspace `cargo test`.
+- Ask before running a full workspace validation sweep.
+- When the user wants the full sweep, run the repo-root wrapper:
+  - `./custom/run-tests.sh`
+- Do not substitute raw `cargo test` for `./custom/run-tests.sh` or upstream `just test`. The wrapper preserves the upstream `cargo nextest` path, installs `cargo-nextest` if missing, and isolates `HOME` so local `$HOME/.agents/skills` does not change app-server skill tests.
 
 ## Output Rules
 
@@ -117,6 +120,10 @@ Keep the write-up concise, but do not skip:
 - Never retire a mod without user confirmation, even if upstream looks equivalent.
 - `AGENTS.md` is required context, but it is not a complete fork inventory today. `git log main..custom` wins for commits; `CUSTOM_MODS.md` wins for behavior intent.
 - TUI mods can span state, rendering, tests, and snapshots together. Treat them as one unit.
+- Full-suite validation has local-environment traps. Use `./custom/run-tests.sh` so `$HOME/.agents/skills` does not leak into app-server tests, and so `RUST_MIN_STACK` plus nextest's app-server serialization are preserved.
+- Runtime permission plumbing now has two layers: stored config defaults and active-turn runtime permissions. When adapting approval-review tests or `turn/contextUpdate`, update both layers when the test expects effective runtime behavior to change.
+- If app-server warning tests report an unexpected omitted-skill count, suspect host skill discovery before changing assertions. The test process can see `$HOME/.agents/skills` unless the full-test wrapper isolates `HOME`.
+- If shell snapshot runtime tests fail under raw `cargo test` with missing `/bin/bash`, do not patch the tests first; rerun through `./custom/run-tests.sh`/`just test` because the supported path is nextest in the Nix shell.
 
 ## Common Pitfalls
 
@@ -136,6 +143,7 @@ Keep the write-up concise, but do not skip:
 - [ ] Each mod handled in chronological order with `retain/port`, `retire`, or `blocked`
 - [ ] Any retirement decision paused for user confirmation
 - [ ] Targeted verification run for each touched mod
+- [ ] Full validation, when requested, run via `./custom/run-tests.sh`
 - [ ] Repo-root `CUSTOM_MODS.md` updated if behavior ownership or verification changed
 - [ ] Repo-root `AGENTS.md` updated if the fork maintenance map changed
 - [ ] No automatic push of `custom`

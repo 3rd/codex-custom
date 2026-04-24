@@ -838,9 +838,8 @@ async fn maybe_request_mcp_tool_approval(
     }
 
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
-    if should_skip_default_custom_mcp_approval(invocation, approval_mode, annotations) {
-        return None;
-    }
+    let skip_default_custom_approval =
+        should_skip_default_custom_mcp_approval(invocation, approval_mode, annotations);
     let approval_required = requires_mcp_tool_approval(annotations);
     if !approval_required && approval_mode != AppToolApproval::Prompt {
         return None;
@@ -871,7 +870,9 @@ async fn maybe_request_mcp_tool_approval(
         }
     }
 
-    if matches!(runtime_permissions.approval_policy, AskForApproval::Never) {
+    if matches!(runtime_permissions.approval_policy, AskForApproval::Never)
+        && !skip_default_custom_approval
+    {
         return Some(McpToolApprovalDecision::Decline { message: None });
     }
 
@@ -907,6 +908,10 @@ async fn maybe_request_mcp_tool_approval(
             });
         }
         None => {}
+    }
+
+    if skip_default_custom_approval {
+        return None;
     }
 
     let tool_call_mcp_elicitation_enabled = turn_context

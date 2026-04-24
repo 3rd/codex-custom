@@ -735,7 +735,7 @@ async fn danger_mode_restores_guardian_approvals_permissions() {
     chat.set_approval_policy(AskForApproval::OnRequest);
     chat.set_sandbox_policy(SandboxPolicy::new_workspace_write_policy())
         .expect("workspace-write should be allowed");
-    chat.set_approvals_reviewer(ApprovalsReviewer::GuardianSubagent);
+    chat.set_approvals_reviewer(ApprovalsReviewer::AutoReview);
 
     chat.enter_danger_mode();
     assert_eq!(
@@ -759,6 +759,6 @@ async fn danger_mode_restores_guardian_approvals_permissions() {
     ));
     assert_eq!(
         chat.config.approvals_reviewer,
-        ApprovalsReviewer::GuardianSubagent
+        ApprovalsReviewer::AutoReview
     );
 }

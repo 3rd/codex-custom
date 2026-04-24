@@ -419,7 +419,6 @@ async fn turn_context_update_resolves_pending_command_approval_when_switching_to
     let resolved: ServerRequestResolvedNotification = serde_json::from_value(
         resolved_notification
             .params
-            .clone()
             .expect("serverRequest/resolved params must be present"),
     )?;
     assert_eq!(resolved.thread_id, thread.id);

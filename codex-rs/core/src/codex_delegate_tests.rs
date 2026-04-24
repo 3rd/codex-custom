@@ -286,7 +286,7 @@ async fn handle_exec_approval_uses_call_id_for_guardian_review_and_approval_id_f
         .expect("set on-request policy");
     let mut runtime_permissions = parent_ctx.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
-    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
     parent_ctx.replace_runtime_permissions(runtime_permissions);
     let parent_ctx = Arc::new(parent_ctx);
 
@@ -402,7 +402,7 @@ async fn delegated_mcp_guardian_abort_returns_synthetic_decline_answer() {
         .expect("set on-request policy");
     let mut runtime_permissions = parent_ctx.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
-    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
     parent_ctx.replace_runtime_permissions(runtime_permissions);
     let parent_ctx = Arc::new(parent_ctx);
 

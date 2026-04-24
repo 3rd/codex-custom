@@ -4129,6 +4129,7 @@ async fn pending_request_permissions_is_auto_denied_when_runtime_policy_switches
                             ..RequestPermissionProfile::default()
                         },
                     },
+                    CancellationToken::new(),
                 )
                 .await
         }
@@ -4186,6 +4187,7 @@ async fn pending_request_permissions_is_auto_denied_when_runtime_policy_switches
             codex_protocol::request_permissions::RequestPermissionsResponse {
                 permissions: RequestPermissionProfile::default(),
                 scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
             }
         )
     );

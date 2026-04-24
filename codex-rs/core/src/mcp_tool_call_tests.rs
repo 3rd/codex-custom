@@ -1565,7 +1565,7 @@ async fn guardian_mode_skips_auto_when_annotations_do_not_require_approval() {
     );
     let mut runtime_permissions = turn_context.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
-    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
@@ -1846,7 +1846,7 @@ async fn guardian_mode_mcp_denial_returns_rationale_message() {
     );
     let mut runtime_permissions = turn_context.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
-    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);
@@ -1966,6 +1966,7 @@ async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_never_m
         &turn_context,
         "call-custom-auto",
         &invocation,
+        "mcp__docs__search",
         /*metadata*/ None,
         AppToolApproval::Auto,
     )
@@ -1992,6 +1993,7 @@ async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_on_requ
                 &turn_context,
                 "call-custom-auto-on-request",
                 &invocation,
+                "mcp__docs__search",
                 /*metadata*/ None,
                 AppToolApproval::Auto,
             )
@@ -2026,6 +2028,7 @@ async fn custom_auto_mode_skips_approval_when_annotations_have_no_hints_in_on_re
                 &turn_context,
                 "call-custom-auto-empty-annotations-on-request",
                 &invocation,
+                "mcp__docs__search",
                 Some(&metadata),
                 AppToolApproval::Auto,
             )
@@ -2414,7 +2417,7 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
     );
     let mut runtime_permissions = turn_context.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
-    runtime_permissions.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
     turn_context.replace_runtime_permissions(runtime_permissions);
 
     let session = Arc::new(session);

@@ -344,7 +344,7 @@ async fn loads_repo_skills_from_claude_dir_when_agents_dir_is_missing() {
     );
 
     let cfg = make_config_for_cwd(&codex_home, nested).await;
-    let outcome = load_skills_for_test(&cfg);
+    let outcome = load_skills_for_test(&cfg).await;
 
     assert!(
         outcome.errors.is_empty(),
@@ -388,7 +388,7 @@ async fn repo_agents_skills_beat_claude_fallback() {
     );
 
     let cfg = make_config_for_cwd(&codex_home, nested).await;
-    let outcome = load_skills_for_test(&cfg);
+    let outcome = load_skills_for_test(&cfg).await;
 
     assert!(
         outcome.errors.is_empty(),

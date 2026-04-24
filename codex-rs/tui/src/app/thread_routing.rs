@@ -679,6 +679,7 @@ impl App {
                 approval_policy,
                 approvals_reviewer,
                 sandbox_policy,
+                permission_profile,
                 windows_sandbox_level: _windows_sandbox_level,
                 model,
                 effort,
@@ -691,6 +692,7 @@ impl App {
                     || approval_policy.is_some()
                     || approvals_reviewer.is_some()
                     || sandbox_policy.is_some()
+                    || permission_profile.is_some()
                     || model.is_some()
                     || effort.is_some()
                     || summary.is_some()
@@ -705,14 +707,15 @@ impl App {
                     .turn_context_update(codex_app_server_protocol::TurnContextUpdateParams {
                         thread_id: thread_id.to_string(),
                         cwd: (*cwd).clone(),
-                        approval_policy: (*approval_policy).clone().map(Into::into),
-                        approvals_reviewer: (*approvals_reviewer).clone().map(Into::into),
+                        approval_policy: (*approval_policy).map(Into::into),
+                        approvals_reviewer: (*approvals_reviewer).map(Into::into),
                         sandbox_policy: (*sandbox_policy).clone().map(Into::into),
+                        permission_profile: (*permission_profile).clone().map(Into::into),
                         model: (*model).clone(),
-                        service_tier: (*service_tier).clone(),
-                        effort: (*effort).clone().map(|effort| effort.map(Into::into)),
-                        summary: (*summary).clone().map(Into::into),
-                        personality: (*personality).clone(),
+                        service_tier: (*service_tier),
+                        effort: *effort,
+                        summary: (*summary),
+                        personality: (*personality),
                         collaboration_mode: (*collaboration_mode).clone(),
                     })
                     .await?;
