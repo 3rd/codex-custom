@@ -99,6 +99,9 @@ async fn request_permissions_routes_to_guardian_when_reviewer_is_enabled() {
     );
     session.services.models_manager = models_manager;
     turn_context_raw.config = Arc::clone(&config);
+    let mut runtime_permissions = turn_context_raw.runtime_permissions();
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn_context_raw.replace_runtime_permissions(runtime_permissions);
     turn_context_raw.provider = create_model_provider(
         config.model_provider.clone(),
         turn_context_raw.auth_manager.clone(),
@@ -181,6 +184,9 @@ async fn request_permissions_guardian_review_stops_when_cancelled() {
         .services
         .models_manager = models_manager;
     turn_context_raw.config = Arc::clone(&config);
+    let mut runtime_permissions = turn_context_raw.runtime_permissions();
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn_context_raw.replace_runtime_permissions(runtime_permissions);
     turn_context_raw.provider = create_model_provider(
         config.model_provider.clone(),
         turn_context_raw.auth_manager.clone(),

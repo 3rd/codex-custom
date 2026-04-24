@@ -16,6 +16,8 @@ use codex_app_server_protocol::ServerRequestResolvedNotification;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnContextUpdateParams;
+use codex_app_server_protocol::TurnContextUpdateResponse;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::TurnStartParams;
@@ -320,6 +322,107 @@ async fn turn_interrupt_resolves_pending_command_approval_request() -> Result<()
     )?;
     assert_eq!(completed.thread_id, thread.id);
     assert_eq!(completed.turn.status, TurnStatus::Interrupted);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn turn_context_update_resolves_pending_command_approval_when_switching_to_full_access()
+-> Result<()> {
+    let shell_command = vec![
+        "python3".to_string(),
+        "-c".to_string(),
+        "print(42)".to_string(),
+    ];
+
+    let tmp = TempDir::new()?;
+    let codex_home = tmp.path().join("codex_home");
+    std::fs::create_dir(&codex_home)?;
+    let working_directory = tmp.path().join("workdir");
+    std::fs::create_dir(&working_directory)?;
+
+    let server = create_mock_responses_server_sequence(vec![create_shell_command_sse_response(
+        shell_command.clone(),
+        Some(&working_directory),
+        Some(10_000),
+        "call_python_approval",
+    )?])
+    .await;
+    create_config_toml(&codex_home, &server.uri(), "untrusted", "read-only")?;
+
+    let mut mcp = McpProcess::new(&codex_home).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let thread_req = mcp
+        .send_thread_start_request(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let thread_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
+
+    let turn_req = mcp
+        .send_turn_start_request(TurnStartParams {
+            thread_id: thread.id.clone(),
+            input: vec![V2UserInput::Text {
+                text: "run python".to_string(),
+                text_elements: Vec::new(),
+            }],
+            cwd: Some(working_directory),
+            ..Default::default()
+        })
+        .await?;
+    let turn_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
+    )
+    .await??;
+    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
+
+    let request = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_request_message(),
+    )
+    .await??;
+    let ServerRequest::CommandExecutionRequestApproval { request_id, params } = request else {
+        panic!("expected CommandExecutionRequestApproval request");
+    };
+    assert_eq!(params.item_id, "call_python_approval");
+    assert_eq!(params.thread_id, thread.id);
+    assert_eq!(params.turn_id, turn.id);
+
+    let update_id = mcp
+        .send_turn_context_update_request(TurnContextUpdateParams {
+            thread_id: thread.id.clone(),
+            approval_policy: Some(codex_app_server_protocol::AskForApproval::Never),
+            sandbox_policy: Some(codex_app_server_protocol::SandboxPolicy::DangerFullAccess),
+            ..Default::default()
+        })
+        .await?;
+    let update_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(update_id)),
+    )
+    .await??;
+    let _resp: TurnContextUpdateResponse = to_response::<TurnContextUpdateResponse>(update_resp)?;
+
+    let resolved_notification = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("serverRequest/resolved"),
+    )
+    .await??;
+    let resolved: ServerRequestResolvedNotification = serde_json::from_value(
+        resolved_notification
+            .params
+            .expect("serverRequest/resolved params must be present"),
+    )?;
+    assert_eq!(resolved.thread_id, thread.id);
+    assert_eq!(resolved.request_id, request_id);
 
     Ok(())
 }

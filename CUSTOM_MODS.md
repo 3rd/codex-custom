@@ -8,10 +8,10 @@ Before adapting a mod, read the matching entry, inspect current upstream ownersh
 
 - Mod ID: `sync-workflow`
 - Current commits: `4876328d1`, current `chore: update skill` top commit
-- Behavior contract: `main` mirrors `openai/main`, `custom` carries local patches, `make sync` syncs `main` then rebases `custom`, and `make build` uses the local-release profile through the Nix shell.
-- Owner areas: `Makefile`, `codex-rs/Cargo.toml`, `flake.nix`
-- Targeted checks: `make sync-checklist`, `make -n sync-main`, `make -n rebase-custom`, `make -n sync`
-- Adaptation notes: preserve remote validation and the clean-worktree requirement before rebasing. Keep `main` disposable and never land custom work there.
+- Behavior contract: `main` mirrors `openai/main`, `custom` carries local patches, `make sync` syncs `main` then rebases `custom`, `make build` uses the local-release profile through the Nix shell, and `custom/run-tests.sh` runs the fork's full workspace validation without leaking local agent skills into app-server tests.
+- Owner areas: `Makefile`, `codex-rs/Cargo.toml`, `flake.nix`, `custom/run-tests.sh`
+- Targeted checks: `make sync-checklist`, `make -n sync-main`, `make -n rebase-custom`, `make -n sync`, `bash -n custom/run-tests.sh`
+- Adaptation notes: preserve remote validation and the clean-worktree requirement before rebasing. Keep `main` disposable and never land custom work there. Keep `custom/run-tests.sh` aligned with upstream `just test`; it may bootstrap `cargo-nextest`, but it should not replace the upstream test path with raw `cargo test`.
 - Retirement criteria: upstream provides an equivalent fork workflow or this checkout stops carrying local patches.
 
 ## MCP Approval Compatibility
@@ -60,8 +60,8 @@ Before adapting a mod, read the matching entry, inspect current upstream ownersh
 - Current commits: `6eb413d94`, `47c6f2458`, current `chore: update skill` top commit
 - Behavior contract: coding agents have a repo-local skill that syncs from upstream, inventories fork-only commits, adapts mods one at a time, and reports sync status, mod decisions, pending confirmations, and verification.
 - Owner areas: `.agents/skills/sync-upstream`, `AGENTS.md`, `CUSTOM_MODS.md`
-- Targeted checks: read-through of the skill instructions against `AGENTS.md` and this manifest
-- Adaptation notes: update this skill whenever sync ownership, verification commands, or mod retirement rules change.
+- Targeted checks: read-through of the skill instructions against `AGENTS.md` and this manifest; `bash -n custom/run-tests.sh` when the full-test wrapper changes
+- Adaptation notes: update this skill whenever sync ownership, verification commands, full-test wrapper behavior, or mod retirement rules change.
 - Retirement criteria: upstream or the active agent runtime provides an equivalent fork-sync workflow.
 
 ## RTK Shell Approval Normalization

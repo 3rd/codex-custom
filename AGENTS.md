@@ -13,6 +13,8 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
   - `make sync-checklist`: print branch state, remotes, fork-only commits, and the standard targeted verification commands without mutating branches.
   - `make build`: run only from `custom`. It enters `nix develop`, sets `CARGO_HOME=/tmp/codex-custom-cargo-home`, and builds `codex-rs` with `cargo build -p codex-cli --bin codex --profile local-release`.
   - `make install`: build and install the custom binary to `$(HOME)/.local/bin/codex` by default. Override `PREFIX` or `BIN_DIR` if needed.
+- Use `./custom/run-tests.sh` for full workspace test sweeps during sync validation. It preserves the upstream `just test`/`cargo nextest` path, installs `cargo-nextest` if missing, and isolates `HOME` so local `$HOME/.agents/skills` does not leak into app-server skill-count tests.
+- Do not treat raw `cargo test` as equivalent to `just test` for full sync validation. Upstream's `just test` sets `RUST_MIN_STACK=8388608` and nextest serializes app-server integration tests through `codex-rs/.config/nextest.toml`; raw `cargo test` can surface local-environment failures that are not sync regressions.
 - `codex-rs/Cargo.toml` defines `profile.local-release` specifically for this fork. It keeps release settings but disables LTO and raises codegen units to speed up local custom builds.
 - `flake.nix` adds `libcap` to the dev shell. Prefer the Nix shell for local Linux sandbox builds instead of relying on host packages.
 - Current fork-only behavior lives in `codex-rs/core/src/mcp_tool_call.rs`:
@@ -25,20 +27,35 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
   - `codex-rs/shell-command/src/command_safety/is_dangerous_command.rs`
   - `codex-rs/core/src/exec_policy.rs`
   - Leading `rtk` wrapper tokens are stripped before shell auto-approval heuristics and execpolicy matching so `rtk ls -la` is treated like `ls -la` for approval purposes.
-- Current fork-only project-doc fallback behavior lives in `codex-rs/core/src/project_doc.rs`:
+- Current fork-only project-doc fallback behavior lives in `codex-rs/core/src/agents_md.rs`:
   - Built-in fallback discovery also recognizes `CLAUDE.md` and `.claude/CLAUDE.md` when `AGENTS.md` is absent.
   - `AGENTS.md` remains preferred within a directory, and only one project doc is used per directory when walking toward `cwd`.
 - Current fork-only repo skill-root fallback lives in `codex-rs/core-skills/src/loader.rs`:
   - Repo-local `.agents/skills` remains the preferred project skill directory.
   - Repo-local `.claude/skills` is used only as a fallback when `.agents/skills` is absent.
+- Current fork-only live turn context update behavior lives in:
+  - `codex-rs/app-server-protocol/src/protocol/common.rs`
+  - `codex-rs/app-server-protocol/src/protocol/v2.rs`
+  - `codex-rs/app-server/src/codex_message_processor.rs`
+  - `codex-rs/core/src/session/handlers.rs`
+  - `codex-rs/core/src/state/turn.rs`
+  - `codex-rs/tui/src/app_server_session.rs`
+  - `codex-rs/tui/src/bottom_pane/approval_overlay.rs`
+  - `codex-rs/tui/src/chatwidget/interrupts.rs`
+  - `turn/contextUpdate` updates the active turn and subsequent defaults without new user input, and re-evaluates pending interactive requests when runtime permissions change.
+  - When adapting tests around runtime permission changes, keep the `Config` defaults and `TurnContext` runtime permissions aligned. Current upstream uses effective runtime permissions for approval-review routing, so updating only `config.approvals_reviewer` is not enough.
 - Regression coverage for the fork patch lives in `codex-rs/core/src/mcp_tool_call_tests.rs`. If you touch this behavior, rerun focused `codex-core` tests before doing anything broader.
 - Regression coverage for the `rtk` shell approval mod lives in:
   - `codex-rs/shell-command/src/bash.rs`
   - `codex-rs/shell-command/src/command_safety/is_safe_command.rs`
   - `codex-rs/shell-command/src/command_safety/is_dangerous_command.rs`
   - `codex-rs/core/src/exec_policy_tests.rs`
-- Regression coverage for the project-doc fallback mod lives in `codex-rs/core/src/project_doc_tests.rs`.
+- Regression coverage for the project-doc fallback mod lives in `codex-rs/core/src/agents_md_tests.rs`.
 - Regression coverage for the repo skill-root fallback mod lives in `codex-rs/core-skills/src/loader_tests.rs`.
+- Regression coverage for the live turn context update mod lives in:
+  - `codex-rs/app-server/tests/suite/v2/turn_interrupt.rs`
+  - `codex-rs/core/src/session/tests.rs`
+  - `codex-rs/tui/src/chatwidget/tests/permissions.rs`
 - When carrying local mods in `codex-rs/tui`:
   - Prefer TUI-local changes over protocol or app-server surface changes unless the mod truly needs a new cross-process concept.
   - When a mod spans behavior and rendering, expect to touch state, permission/config plumbing, visible UI, tests, and snapshots together.
@@ -100,8 +117,9 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
    - `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fmt'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fix -p codex-tui'`
-15. When a local mod is no longer needed because upstream absorbed it or the workflow changed, confirm with the user before removing the patch instead of carrying dead divergence.
-16. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
+15. For full sync validation after targeted checks, run `./custom/run-tests.sh` from the repo root instead of ad hoc full-suite commands. If it installs `cargo-nextest`, let that finish and rerun through the same script.
+16. When a local mod is no longer needed because upstream absorbed it or the workflow changed, confirm with the user before removing the patch instead of carrying dead divergence.
+17. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
 
 # Rust/codex-rs
 

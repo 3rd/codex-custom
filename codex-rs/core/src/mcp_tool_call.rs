@@ -1007,7 +1007,7 @@ async fn custom_mcp_tool_approval_mode(
 
     sess.services
         .plugins_manager
-        .plugins_for_config(&turn_context.config.plugins_config_input())
+        .plugins_for_config(turn_context.config.as_ref())
         .await
         .plugins()
         .iter()
@@ -1148,21 +1148,17 @@ async fn maybe_request_mcp_tool_approval(
     metadata: Option<&McpToolApprovalMetadata>,
     approval_mode: AppToolApproval,
 ) -> Option<McpToolApprovalDecision> {
+    let runtime_permissions = turn_context.runtime_permissions();
     if mcp_permission_prompt_is_auto_approved(
-        turn_context.approval_policy.value(),
-        &turn_context.permission_profile(),
-        McpPermissionPromptAutoApproveContext {
-            approvals_reviewer: Some(turn_context.config.approvals_reviewer),
-            tool_approval_mode: Some(approval_mode),
-        },
+        runtime_permissions.approval_policy,
+        &runtime_permissions.permission_profile,
     ) {
         return None;
     }
 
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
-    if should_skip_default_custom_mcp_approval(invocation, approval_mode, annotations) {
-        return None;
-    }
+    let skip_default_custom_approval =
+        should_skip_default_custom_mcp_approval(invocation, approval_mode, annotations);
     let approval_required = requires_mcp_tool_approval(annotations);
     if !approval_required && approval_mode != AppToolApproval::Prompt {
         return None;
@@ -1193,7 +1189,9 @@ async fn maybe_request_mcp_tool_approval(
         }
     }
 
-    if matches!(turn_context.approval_policy.value(), AskForApproval::Never) {
+    if matches!(runtime_permissions.approval_policy, AskForApproval::Never)
+        && !skip_default_custom_approval
+    {
         return Some(McpToolApprovalDecision::Decline { message: None });
     }
 
@@ -1229,6 +1227,10 @@ async fn maybe_request_mcp_tool_approval(
             });
         }
         None => {}
+    }
+
+    if skip_default_custom_approval {
+        return None;
     }
 
     let tool_call_mcp_elicitation_enabled = turn_context
@@ -2073,7 +2075,7 @@ async fn persist_non_app_mcp_tool_approval(
     let plugin_config_name = sess
         .services
         .plugins_manager
-        .plugins_for_config(&config.plugins_config_input())
+        .plugins_for_config(config)
         .await
         .plugins()
         .iter()
