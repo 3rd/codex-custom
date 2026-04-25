@@ -328,6 +328,35 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) app_server_client_version: Option<String>,
 }
 
+impl SessionSettingsUpdate {
+    pub(super) fn runtime_permissions_only(&self) -> Option<Self> {
+        if self.approval_policy.is_none()
+            && self.approvals_reviewer.is_none()
+            && self.sandbox_policy.is_none()
+            && self.permission_profile.is_none()
+            && self.windows_sandbox_level.is_none()
+        {
+            return None;
+        }
+
+        Some(Self {
+            cwd: None,
+            approval_policy: self.approval_policy,
+            approvals_reviewer: self.approvals_reviewer,
+            sandbox_policy: self.sandbox_policy.clone(),
+            permission_profile: self.permission_profile.clone(),
+            windows_sandbox_level: self.windows_sandbox_level,
+            collaboration_mode: None,
+            reasoning_summary: None,
+            service_tier: None,
+            final_output_json_schema: None,
+            environments: None,
+            personality: None,
+            app_server_client_name: None,
+            app_server_client_version: None,
+        })
+    }
+}
 pub(crate) struct AppServerClientMetadata {
     pub(crate) client_name: Option<String>,
     pub(crate) client_version: Option<String>,
