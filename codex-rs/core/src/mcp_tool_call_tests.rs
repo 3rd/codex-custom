@@ -2302,10 +2302,7 @@ async fn full_access_mode_skips_arc_monitor_for_all_approval_modes() {
     runtime_permissions.approval_policy = AskForApproval::Never;
     runtime_permissions.sandbox_policy = SandboxPolicy::DangerFullAccess;
     runtime_permissions.file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-            &SandboxPolicy::DangerFullAccess,
-            &turn_context.cwd,
-        );
+        FileSystemSandboxPolicy::from_legacy_sandbox_policy(&SandboxPolicy::DangerFullAccess);
     runtime_permissions.network_sandbox_policy = NetworkSandboxPolicy::Enabled;
     turn_context.replace_runtime_permissions(runtime_permissions);
 

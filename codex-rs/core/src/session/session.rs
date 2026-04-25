@@ -339,6 +339,7 @@ impl SessionSettingsUpdate {
             reasoning_summary: None,
             service_tier: None,
             final_output_json_schema: None,
+            environments: None,
             personality: None,
             app_server_client_name: None,
             app_server_client_version: None,
