@@ -1057,6 +1057,7 @@ fn append_read_only_subpath_args(
     if !subpath.exists() {
         if let Some(first_missing_component) = find_first_non_existent_component(subpath)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
+            && !is_project_metadata_mount_point(&first_missing_component)
         {
             append_missing_read_only_subpath_args(bwrap_args, &first_missing_component)?;
         }
@@ -1161,6 +1162,7 @@ fn append_unreadable_root_args(
     if !unreadable_root.exists() {
         if let Some(first_missing_component) = find_first_non_existent_component(unreadable_root)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
+            && !is_project_metadata_mount_point(&first_missing_component)
         {
             append_missing_empty_file_bind_data_args(bwrap_args, &first_missing_component)?;
         }
@@ -1250,6 +1252,13 @@ fn directory_is_empty(path: &Path) -> bool {
     entries.next().is_none()
 }
 
+fn is_project_metadata_mount_point(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".agents" | ".codex")
+    )
+}
+
 fn first_writable_symlink_component_in_path(
     target_path: &Path,
     allowed_write_paths: &[PathBuf],
@@ -1294,9 +1303,6 @@ fn first_writable_symlink_component_in_path(
 }
 
 /// Find the first missing path component while walking `target_path`.
-///
-/// Mounting `/dev/null` on the first missing component prevents the sandboxed
-/// process from creating the protected path hierarchy.
 fn find_first_non_existent_component(target_path: &Path) -> Option<PathBuf> {
     let mut current = PathBuf::new();
 
@@ -2022,11 +2028,7 @@ mod tests {
             synthetic_mount_target_paths(&args),
             vec![
                 PathBuf::from("/.git"),
-                PathBuf::from("/.agents"),
-                PathBuf::from("/.codex"),
                 PathBuf::from("/dev/.git"),
-                PathBuf::from("/dev/.agents"),
-                PathBuf::from("/dev/.codex"),
             ]
         );
         assert_eq!(
@@ -2043,53 +2045,75 @@ mod tests {
                 "--bind".to_string(),
                 "/".to_string(),
                 "/".to_string(),
-                // Mask the default metadata path names under the writable root.
-                // Because the root is `/` in this test, these carveout paths
-                // appear directly below `/`.
+                // Mask the default `.git` path under the writable root.
                 "--perms".to_string(),
                 "555".to_string(),
                 "--tmpfs".to_string(),
                 "/.git".to_string(),
                 "--remount-ro".to_string(),
                 "/.git".to_string(),
-                "--perms".to_string(),
-                "555".to_string(),
-                "--tmpfs".to_string(),
-                "/.agents".to_string(),
-                "--remount-ro".to_string(),
-                "/.agents".to_string(),
-                "--perms".to_string(),
-                "555".to_string(),
-                "--tmpfs".to_string(),
-                "/.codex".to_string(),
-                "--remount-ro".to_string(),
-                "/.codex".to_string(),
                 // Rebind /dev after the root bind so device nodes remain
                 // writable/usable inside the writable root.
                 "--bind".to_string(),
                 "/dev".to_string(),
                 "/dev".to_string(),
-                // Then mask the metadata names that would otherwise be
-                // creatable below the writable /dev bind.
+                // Then mask the `.git` path that would otherwise be creatable
+                // below the writable /dev bind.
                 "--perms".to_string(),
                 "555".to_string(),
                 "--tmpfs".to_string(),
                 "/dev/.git".to_string(),
                 "--remount-ro".to_string(),
                 "/dev/.git".to_string(),
-                "--perms".to_string(),
-                "555".to_string(),
-                "--tmpfs".to_string(),
-                "/dev/.agents".to_string(),
-                "--remount-ro".to_string(),
-                "/dev/.agents".to_string(),
-                "--perms".to_string(),
-                "555".to_string(),
-                "--tmpfs".to_string(),
-                "/dev/.codex".to_string(),
-                "--remount-ro".to_string(),
-                "/dev/.codex".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn missing_project_metadata_roots_do_not_create_bwrap_mount_targets() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        std::fs::create_dir(&workspace).expect("create workspace");
+        let dot_agents = workspace.join(".agents");
+        let dot_codex = workspace.join(".codex");
+        let policy = FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: AbsolutePathBuf::try_from(workspace.as_path()).expect("workspace"),
+                },
+                access: FileSystemAccessMode::Write,
+            },
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: AbsolutePathBuf::try_from(dot_agents.as_path()).expect(".agents"),
+                },
+                access: FileSystemAccessMode::Read,
+            },
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: AbsolutePathBuf::try_from(dot_codex.as_path()).expect(".codex"),
+                },
+                access: FileSystemAccessMode::Read,
+            },
+        ]);
+
+        let args =
+            create_filesystem_args(&policy, temp_dir.path(), NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
+                .expect("filesystem args");
+        let dot_agents = path_to_string(&dot_agents);
+        let dot_codex = path_to_string(&dot_codex);
+
+        assert!(
+            !args
+                .args
+                .windows(3)
+                .any(|window| window == ["--ro-bind", "/dev/null", dot_agents.as_str()])
+        );
+        assert!(
+            !args
+                .args
+                .windows(3)
+                .any(|window| window == ["--ro-bind", "/dev/null", dot_codex.as_str()])
         );
     }
 
