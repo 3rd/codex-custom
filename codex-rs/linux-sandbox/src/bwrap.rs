@@ -807,6 +807,7 @@ fn append_read_only_subpath_args(
     if !subpath.exists() {
         if let Some(first_missing_component) = find_first_non_existent_component(subpath)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
+            && !is_project_metadata_mount_point(&first_missing_component)
         {
             args.push("--ro-bind".to_string());
             args.push("/dev/null".to_string());
@@ -849,6 +850,7 @@ fn append_unreadable_root_args(
     if !unreadable_root.exists() {
         if let Some(first_missing_component) = find_first_non_existent_component(unreadable_root)
             && is_within_allowed_write_paths(&first_missing_component, allowed_write_paths)
+            && !is_project_metadata_mount_point(&first_missing_component)
         {
             args.push("--ro-bind".to_string());
             args.push("/dev/null".to_string());
@@ -920,6 +922,13 @@ fn is_within_allowed_write_paths(path: &Path, allowed_write_paths: &[PathBuf]) -
         .any(|root| path.starts_with(root))
 }
 
+fn is_project_metadata_mount_point(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(".agents" | ".codex")
+    )
+}
+
 fn first_writable_symlink_component_in_path(
     target_path: &Path,
     allowed_write_paths: &[PathBuf],
@@ -964,9 +973,6 @@ fn first_writable_symlink_component_in_path(
 }
 
 /// Find the first missing path component while walking `target_path`.
-///
-/// Mounting `/dev/null` on the first missing component prevents the sandboxed
-/// process from creating the protected path hierarchy.
 fn find_first_non_existent_component(target_path: &Path) -> Option<PathBuf> {
     let mut current = PathBuf::new();
 
@@ -1425,18 +1431,60 @@ mod tests {
                 "--bind".to_string(),
                 "/".to_string(),
                 "/".to_string(),
-                // Mask the default protected .codex subpath under that writable
-                // root. Because the root is `/` in this test, the carveout path
-                // appears as `/.codex`.
-                "--ro-bind".to_string(),
-                "/dev/null".to_string(),
-                "/.codex".to_string(),
                 // Rebind /dev after the root bind so device nodes remain
                 // writable/usable inside the writable root.
                 "--bind".to_string(),
                 "/dev".to_string(),
                 "/dev".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn missing_project_metadata_roots_do_not_create_bwrap_mount_targets() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let workspace = temp_dir.path().join("workspace");
+        std::fs::create_dir(&workspace).expect("create workspace");
+        let dot_agents = workspace.join(".agents");
+        let dot_codex = workspace.join(".codex");
+        let policy = FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: AbsolutePathBuf::try_from(workspace.as_path()).expect("workspace"),
+                },
+                access: FileSystemAccessMode::Write,
+            },
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: AbsolutePathBuf::try_from(dot_agents.as_path()).expect(".agents"),
+                },
+                access: FileSystemAccessMode::Read,
+            },
+            FileSystemSandboxEntry {
+                path: FileSystemPath::Path {
+                    path: AbsolutePathBuf::try_from(dot_codex.as_path()).expect(".codex"),
+                },
+                access: FileSystemAccessMode::Read,
+            },
+        ]);
+
+        let args =
+            create_filesystem_args(&policy, temp_dir.path(), NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
+                .expect("filesystem args");
+        let dot_agents = path_to_string(&dot_agents);
+        let dot_codex = path_to_string(&dot_codex);
+
+        assert!(
+            !args
+                .args
+                .windows(3)
+                .any(|window| window == ["--ro-bind", "/dev/null", dot_agents.as_str()])
+        );
+        assert!(
+            !args
+                .args
+                .windows(3)
+                .any(|window| window == ["--ro-bind", "/dev/null", dot_codex.as_str()])
         );
     }
 

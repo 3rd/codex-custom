@@ -54,6 +54,16 @@ Before adapting a mod, read the matching entry, inspect current upstream ownersh
 - Adaptation notes: keep `.agents/skills` as the primary project skill directory. Do not merge both roots unless the intended behavior changes.
 - Retirement criteria: upstream implements equivalent fallback skill-root loading.
 
+## Missing Project Metadata Bwrap Mounts
+
+- Mod ID: `missing-project-metadata-bwrap-mounts`
+- Current commits: pending
+- Behavior contract: Linux bwrap sandbox setup must not create empty host-side `.agents` or `.codex` files when those protected project metadata roots are missing. Existing `.agents` and `.codex` directories remain protected.
+- Owner areas: `codex-rs/linux-sandbox/src/bwrap.rs`
+- Targeted checks: `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-linux-sandbox missing_project_metadata_roots_do_not_create_bwrap_mount_targets'`, `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-linux-sandbox'`
+- Adaptation notes: upstream issue `openai/codex#16088` and PR `openai/codex#16930` cover the broader `.codex` cleanup approach. Keep this fork patch narrow unless upstream lands a complete cleanup strategy that also covers `.agents`.
+- Retirement criteria: upstream stops materializing missing protected project metadata mount targets for both `.codex` and `.agents`, or implements an equivalent cleanup strategy.
+
 ## Sync Upstream Agent Skill
 
 - Mod ID: `sync-upstream-skill`

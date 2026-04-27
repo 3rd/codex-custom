@@ -33,6 +33,9 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 - Current fork-only repo skill-root fallback lives in `codex-rs/core-skills/src/loader.rs`:
   - Repo-local `.agents/skills` remains the preferred project skill directory.
   - Repo-local `.claude/skills` is used only as a fallback when `.agents/skills` is absent.
+- Current fork-only Linux bwrap missing metadata behavior lives in `codex-rs/linux-sandbox/src/bwrap.rs`:
+  - Missing protected project metadata roots named `.agents` or `.codex` are not mounted over with `/dev/null`, because bwrap can materialize those missing mount targets as empty host-side files.
+  - Existing `.agents` and `.codex` directories remain protected by the normal read-only subpath handling.
 - Current fork-only live turn context update behavior lives in:
   - `codex-rs/app-server-protocol/src/protocol/common.rs`
   - `codex-rs/app-server-protocol/src/protocol/v2.rs`
@@ -52,6 +55,7 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
   - `codex-rs/core/src/exec_policy_tests.rs`
 - Regression coverage for the project-doc fallback mod lives in `codex-rs/core/src/agents_md_tests.rs`.
 - Regression coverage for the repo skill-root fallback mod lives in `codex-rs/core-skills/src/loader_tests.rs`.
+- Regression coverage for the missing project metadata bwrap mount mod lives in `codex-rs/linux-sandbox/src/bwrap.rs`.
 - Regression coverage for the live turn context update mod lives in:
   - `codex-rs/app-server/tests/suite/v2/turn_interrupt.rs`
   - `codex-rs/core/src/session/tests.rs`
@@ -78,8 +82,9 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 7. When patching project-doc discovery, inspect both `codex-rs/core/src/agents_md.rs` and `codex-rs/core/src/agents_md_tests.rs`.
 8. When patching repo skill discovery, inspect both `codex-rs/core-skills/src/loader.rs` and `codex-rs/core-skills/src/loader_tests.rs`.
 9. When patching live turn context updates, inspect the app-server protocol surface, the session/state owner, and the TUI request-resolution owners together.
-10. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
-11. If upstream absorbs a custom patch, confirm with the user before retiring it, update `CUSTOM_MODS.md`, remove the fork-specific note here, and collapse back to upstream workflow.
+10. When patching Linux bwrap project metadata behavior, inspect `codex-rs/linux-sandbox/src/bwrap.rs` and preserve the distinction between missing metadata roots and existing protected directories.
+11. When patching a local TUI mod, inspect the behavior owner, the rendering owner, and the matching tests/snapshots together. TUI fork changes often span more files than they first appear to.
+12. If upstream absorbs a custom patch, confirm with the user before retiring it, update `CUSTOM_MODS.md`, remove the fork-specific note here, and collapse back to upstream workflow.
 
 ## Maintaining Local Mods After Upstream Sync
 
@@ -97,29 +102,31 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 8. Re-validate the repo skill-root fallback patch in:
    - `codex-rs/core-skills/src/loader.rs`
    - `codex-rs/core-skills/src/loader_tests.rs`
-9. Re-validate the live turn context update patch in:
+9. Re-validate the missing project metadata bwrap mount patch in:
+   - `codex-rs/linux-sandbox/src/bwrap.rs`
+10. Re-validate the live turn context update patch in:
    - `codex-rs/app-server/tests/suite/v2/turn_interrupt.rs`
    - `codex-rs/core/src/session/tests.rs`
    - `codex-rs/tui/src/chatwidget/tests/permissions.rs`
-10. Re-validate each local TUI mod by finding:
+11. Re-validate each local TUI mod by finding:
    - the main behavior file
    - the visible rendering file
    - the test files that prove the behavior
    - the accepted snapshots, if the mod changes user-visible output
-11. Look for upstream changes in the seams that usually break local mods:
+12. Look for upstream changes in the seams that usually break local mods:
    - state flow and ownership boundaries
    - permission/config override plumbing
    - UI rendering and snapshot layouts
    - keybinding or command-dispatch paths
-12. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
-13. If a mod's behavior, owner files, tests, or retirement status changes, update `CUSTOM_MODS.md` and this file in the same change.
-14. After reapplying or adjusting a local mod, run:
+13. Re-derive local mods from behavior, not from stale line-by-line diffs. After a sync, ask what the mod is supposed to do in the current upstream architecture, then reapply it in the smallest place that still owns that behavior.
+14. If a mod's behavior, owner files, tests, or retirement status changes, update `CUSTOM_MODS.md` and this file in the same change.
+15. After reapplying or adjusting a local mod, run:
    - `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fmt'`
    - `nix develop . --command bash -lc 'cd codex-rs && just fix -p codex-tui'`
-15. For full sync validation after targeted checks, run `./custom/run-tests.sh` from the repo root instead of ad hoc full-suite commands. If it installs `cargo-nextest`, let that finish and rerun through the same script.
-16. When a local mod is no longer needed because upstream absorbed it or the workflow changed, confirm with the user before removing the patch instead of carrying dead divergence.
-17. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
+16. For full sync validation after targeted checks, run `./custom/run-tests.sh` from the repo root instead of ad hoc full-suite commands. If it installs `cargo-nextest`, let that finish and rerun through the same script.
+17. When a local mod is no longer needed because upstream absorbed it or the workflow changed, confirm with the user before removing the patch instead of carrying dead divergence.
+18. Remember that `make build` writes the custom binary to `codex-rs/target/local-release/codex`, and `make install` copies it to `$(HOME)/.local/bin/codex` by default.
 
 # Rust/codex-rs
 
