@@ -2979,6 +2979,7 @@ async fn full_access_mode_skips_arc_monitor_for_all_approval_modes() {
     turn_context.config = Arc::new(config);
     let mut runtime_permissions = turn_context.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::Never;
+    runtime_permissions.permission_profile = PermissionProfile::Disabled;
     runtime_permissions.sandbox_policy = SandboxPolicy::DangerFullAccess;
     runtime_permissions.file_system_sandbox_policy =
         FileSystemSandboxPolicy::from_legacy_sandbox_policy(&SandboxPolicy::DangerFullAccess);

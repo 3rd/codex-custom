@@ -155,6 +155,27 @@ impl TurnContext {
         self.features.apps_enabled_for_auth(uses_codex_backend)
     }
 
+    pub(crate) fn runtime_permissions(&self) -> RuntimeTurnPermissionsSnapshot {
+        self.runtime_permissions.snapshot()
+    }
+
+    pub(crate) fn replace_runtime_permissions(&self, snapshot: RuntimeTurnPermissionsSnapshot) {
+        self.runtime_permissions.replace(snapshot);
+    }
+
+    pub(crate) fn effective_approval_policy(&self) -> AskForApproval {
+        self.runtime_permissions().approval_policy
+    }
+
+    pub(crate) fn effective_approvals_reviewer(&self) -> ApprovalsReviewer {
+        self.runtime_permissions().approvals_reviewer
+    }
+
+    #[cfg(test)]
+    pub(crate) fn effective_sandbox_policy(&self) -> SandboxPolicy {
+        self.runtime_permissions().sandbox_policy
+    }
+
     pub(crate) async fn with_model(
         &self,
         model: String,
