@@ -3656,8 +3656,9 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .expect("approval policy set");
     let mut runtime_permissions = turn.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
-    runtime_permissions.sandbox_policy = turn.sandbox_policy.get().clone();
-    runtime_permissions.file_system_sandbox_policy = file_system_sandbox_policy.clone();
+    runtime_permissions.permission_profile = permission_profile.clone();
+    runtime_permissions.sandbox_policy = turn.sandbox_policy();
+    runtime_permissions.file_system_sandbox_policy = file_system_sandbox_policy;
     runtime_permissions.network_sandbox_policy = network_sandbox_policy;
     turn.replace_runtime_permissions(runtime_permissions);
 

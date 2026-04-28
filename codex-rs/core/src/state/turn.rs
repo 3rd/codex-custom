@@ -34,7 +34,6 @@ use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::PermissionProfile;
-use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
 
@@ -487,6 +486,7 @@ mod tests {
     use super::*;
     use codex_protocol::approvals::ElicitationRequest;
     use codex_protocol::config_types::WindowsSandboxLevel;
+    use codex_protocol::models::SandboxEnforcement;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 

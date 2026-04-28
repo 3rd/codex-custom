@@ -1159,8 +1159,10 @@ async fn collab_mode_shift_tab_cycles_only_when_idle() {
         AskForApproval::Never
     );
     assert_eq!(
-        chat.config.permissions.sandbox_policy.get(),
-        &SandboxPolicy::DangerFullAccess
+        chat.config
+            .permissions
+            .legacy_sandbox_policy(chat.config.cwd.as_path()),
+        SandboxPolicy::DangerFullAccess
     );
 
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));

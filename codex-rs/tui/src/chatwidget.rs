@@ -1233,7 +1233,9 @@ impl DangerModePermissions {
         Self {
             approval_policy: config.permissions.approval_policy.value(),
             approvals_reviewer: config.approvals_reviewer,
-            sandbox_policy: config.permissions.sandbox_policy.get().clone(),
+            sandbox_policy: config
+                .permissions
+                .legacy_sandbox_policy(config.cwd.as_path()),
         }
     }
 
@@ -11175,8 +11177,7 @@ impl ChatWidget {
         if let Err(err) = self
             .config
             .permissions
-            .sandbox_policy
-            .can_set(&permissions.sandbox_policy)
+            .can_set_legacy_sandbox_policy(&permissions.sandbox_policy, self.config.cwd.as_path())
         {
             self.add_error_message(format!("Failed to set sandbox policy: {err}"));
             return;
@@ -11192,12 +11193,10 @@ impl ChatWidget {
         {
             tracing::warn!(%err, "failed to set approval_policy on chat config");
         }
-        if let Err(err) = self
-            .config
-            .permissions
-            .sandbox_policy
-            .set(permissions.sandbox_policy.clone())
-        {
+        if let Err(err) = self.config.permissions.set_legacy_sandbox_policy(
+            permissions.sandbox_policy.clone(),
+            self.config.cwd.as_path(),
+        ) {
             tracing::warn!(%err, "failed to set sandbox_policy on chat config");
         }
         if !danger_mode_active {

@@ -152,20 +152,9 @@ impl TurnContext {
         self.runtime_permissions().approvals_reviewer
     }
 
+    #[cfg(test)]
     pub(crate) fn effective_sandbox_policy(&self) -> SandboxPolicy {
         self.runtime_permissions().sandbox_policy
-    }
-
-    pub(crate) fn effective_file_system_sandbox_policy(&self) -> FileSystemSandboxPolicy {
-        self.runtime_permissions().file_system_sandbox_policy
-    }
-
-    pub(crate) fn effective_network_sandbox_policy(&self) -> NetworkSandboxPolicy {
-        self.runtime_permissions().network_sandbox_policy
-    }
-
-    pub(crate) fn effective_windows_sandbox_level(&self) -> WindowsSandboxLevel {
-        self.runtime_permissions().windows_sandbox_level
     }
 
     pub(crate) async fn with_model(

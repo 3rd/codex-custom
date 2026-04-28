@@ -515,7 +515,6 @@ impl ShellHandler {
         );
         emitter.begin(event_ctx).await;
 
-        let file_system_sandbox_policy = turn.file_system_sandbox_policy();
         let exec_approval_requirement = session
             .services
             .exec_policy

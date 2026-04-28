@@ -743,8 +743,10 @@ async fn danger_mode_restores_guardian_approvals_permissions() {
         AskForApproval::Never
     );
     assert_eq!(
-        chat.config.permissions.sandbox_policy.get(),
-        &SandboxPolicy::DangerFullAccess
+        chat.config
+            .permissions
+            .legacy_sandbox_policy(chat.config.cwd.as_path()),
+        SandboxPolicy::DangerFullAccess
     );
     assert_eq!(chat.config.approvals_reviewer, ApprovalsReviewer::User);
 
@@ -754,7 +756,9 @@ async fn danger_mode_restores_guardian_approvals_permissions() {
         AskForApproval::OnRequest
     );
     assert!(matches!(
-        chat.config.permissions.sandbox_policy.get(),
+        chat.config
+            .permissions
+            .legacy_sandbox_policy(chat.config.cwd.as_path()),
         SandboxPolicy::WorkspaceWrite { .. }
     ));
     assert_eq!(
