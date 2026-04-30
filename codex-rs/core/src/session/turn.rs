@@ -1507,6 +1507,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::GuardianAssessment(_)
         | EventMsg::ElicitationRequest(_)
         | EventMsg::ApplyPatchApprovalRequest(_)
+        | EventMsg::InteractiveRequestResolved(_)
         | EventMsg::DeprecationNotice(_)
         | EventMsg::StreamError(_)
         | EventMsg::TurnDiff(_)

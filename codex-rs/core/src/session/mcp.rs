@@ -120,6 +120,20 @@ impl Session {
             },
         };
 
+        let id = match &request_id {
+            rmcp::model::NumberOrString::String(value) => {
+                codex_protocol::mcp::RequestId::String(value.to_string())
+            }
+            rmcp::model::NumberOrString::Number(value) => {
+                codex_protocol::mcp::RequestId::Integer(*value)
+            }
+        };
+        let event = ElicitationRequestEvent {
+            turn_id: params.turn_id,
+            server_name: server_name.clone(),
+            id: id.clone(),
+            request,
+        };
         let (tx_response, rx_response) = oneshot::channel();
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
@@ -128,8 +142,11 @@ impl Session {
                     let mut ts = at.turn_state.lock().await;
                     ts.insert_pending_elicitation(
                         server_name.clone(),
-                        request_id.clone(),
-                        tx_response,
+                        id.clone(),
+                        PendingElicitationRequest {
+                            event: event.clone(),
+                            tx: tx_response,
+                        },
                     )
                 }
                 None => None,
@@ -140,21 +157,8 @@ impl Session {
                 "Overwriting existing pending elicitation for server_name: {server_name}, request_id: {request_id}"
             );
         }
-        let id = match request_id {
-            rmcp::model::NumberOrString::String(value) => {
-                codex_protocol::mcp::RequestId::String(value.to_string())
-            }
-            rmcp::model::NumberOrString::Number(value) => {
-                codex_protocol::mcp::RequestId::Integer(value)
-            }
-        };
-        let event = EventMsg::ElicitationRequest(ElicitationRequestEvent {
-            turn_id: params.turn_id,
-            server_name,
-            id,
-            request,
-        });
-        self.send_event(turn_context, event).await;
+        self.send_event(turn_context, EventMsg::ElicitationRequest(event))
+            .await;
         rx_response.await.ok()
     }
 
@@ -168,18 +172,27 @@ impl Session {
         id: RequestId,
         response: ElicitationResponse,
     ) -> anyhow::Result<()> {
+        let pending_id = match &id {
+            rmcp::model::NumberOrString::String(value) => {
+                codex_protocol::mcp::RequestId::String(value.to_string())
+            }
+            rmcp::model::NumberOrString::Number(value) => {
+                codex_protocol::mcp::RequestId::Integer(*value)
+            }
+        };
         let entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.remove_pending_elicitation(&server_name, &id)
+                    ts.remove_pending_elicitation(&server_name, &pending_id)
                 }
                 None => None,
             }
         };
-        if let Some(tx_response) = entry {
-            tx_response
+        if let Some(entry) = entry {
+            entry
+                .tx
                 .send(response)
                 .map_err(|e| anyhow::anyhow!("failed to send elicitation response: {e:?}"))?;
             return Ok(());

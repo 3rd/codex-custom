@@ -698,7 +698,11 @@ fn commands_for_exec_policy_strips_rtk_prefix_from_direct_commands() {
 
     assert_eq!(
         commands_for_exec_policy(&command),
-        (vec![vec!["ls".to_string(), "-la".to_string()]], false)
+        ExecPolicyCommands {
+            commands: vec![vec!["ls".to_string(), "-la".to_string()]],
+            used_complex_parsing: false,
+            command_origin: ExecPolicyCommandOrigin::Generic,
+        }
     );
 }
 
@@ -712,7 +716,11 @@ fn commands_for_exec_policy_strips_rtk_prefix_inside_shell_scripts() {
 
     assert_eq!(
         commands_for_exec_policy(&command),
-        (vec![vec!["ls".to_string(), "-la".to_string()]], false)
+        ExecPolicyCommands {
+            commands: vec![vec!["ls".to_string(), "-la".to_string()]],
+            used_complex_parsing: false,
+            command_origin: ExecPolicyCommandOrigin::Generic,
+        }
     );
 }
 

@@ -17,6 +17,7 @@ use crate::AgentPath;
 use crate::SessionId;
 use crate::ThreadId;
 use crate::approvals::ElicitationRequestEvent;
+use crate::approvals::InteractiveRequestResolvedEvent;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
 use crate::config_types::ModeKind;
@@ -1374,6 +1375,8 @@ pub enum EventMsg {
     ElicitationRequest(ElicitationRequestEvent),
 
     ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent),
+
+    InteractiveRequestResolved(InteractiveRequestResolvedEvent),
 
     /// Structured lifecycle event for a guardian-reviewed approval request.
     GuardianAssessment(GuardianAssessmentEvent),

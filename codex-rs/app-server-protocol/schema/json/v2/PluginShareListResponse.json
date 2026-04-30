@@ -282,8 +282,7 @@
               "$ref": "#/definitions/PluginAvailability"
             }
           ],
-          "default": "AVAILABLE",
-          "description": "Availability state for installing and using the plugin."
+          "default": "AVAILABLE"
         },
         "enabled": {
           "type": "boolean"

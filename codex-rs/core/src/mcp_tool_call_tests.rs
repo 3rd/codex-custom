@@ -1966,7 +1966,7 @@ enabled = true
     session
         .services
         .plugins_manager
-        .plugins_for_config(&initial_config)
+        .plugins_for_config(&initial_config.plugins_config_input())
         .await;
     std::fs::write(
         codex_home.join(CONFIG_TOML_FILE),
@@ -2982,7 +2982,10 @@ async fn full_access_mode_skips_arc_monitor_for_all_approval_modes() {
     runtime_permissions.permission_profile = PermissionProfile::Disabled;
     runtime_permissions.sandbox_policy = SandboxPolicy::DangerFullAccess;
     runtime_permissions.file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(&SandboxPolicy::DangerFullAccess);
+        FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(
+            &SandboxPolicy::DangerFullAccess,
+            turn_context.cwd.as_path(),
+        );
     runtime_permissions.network_sandbox_policy = NetworkSandboxPolicy::Enabled;
     turn_context.replace_runtime_permissions(runtime_permissions);
 

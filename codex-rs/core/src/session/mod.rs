@@ -79,6 +79,8 @@ use codex_protocol::ToolName;
 use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecPolicyAmendment;
+use codex_protocol::approvals::InteractiveRequestId;
+use codex_protocol::approvals::InteractiveRequestResolvedEvent;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::ApprovalsReviewer;
@@ -285,7 +287,11 @@ use crate::skills_watcher::SkillsWatcher;
 use crate::skills_watcher::SkillsWatcherEvent;
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
+use crate::state::PendingApprovalRequest;
+use crate::state::PendingElicitationRequest;
+use crate::state::PendingInteractiveResolution;
 use crate::state::PendingRequestPermissions;
+use crate::state::RuntimeTurnPermissionsSnapshot;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 #[cfg(test)]
@@ -1316,7 +1322,14 @@ impl Session {
         &self,
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
-        let (previous_cwd, permission_profile_changed, next_cwd, codex_home, session_source) = {
+        let (
+            previous_cwd,
+            permission_profile_changed,
+            next_cwd,
+            codex_home,
+            session_source,
+            runtime_permissions,
+        ) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
@@ -1334,6 +1347,9 @@ impl Session {
             let next_cwd = updated.cwd.clone();
             let codex_home = updated.codex_home.clone();
             let session_source = updated.session_source.clone();
+            let runtime_permissions = updates
+                .runtime_permissions_only()
+                .map(|_| updated.runtime_turn_permissions_snapshot());
             state.session_configuration = updated;
             (
                 previous_cwd,
@@ -1341,6 +1357,7 @@ impl Session {
                 next_cwd,
                 codex_home,
                 session_source,
+                runtime_permissions,
             )
         };
 
@@ -1352,6 +1369,15 @@ impl Session {
         );
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()
+                .await;
+        }
+
+        if let Some(runtime_permissions) = runtime_permissions {
+            self.refresh_runtime_permissions_for_current_turn(&runtime_permissions)
+                .await;
+            self.refresh_pending_interactive_requests(&runtime_permissions)
+                .await;
+            self.refresh_runtime_permissions_for_mcp(&runtime_permissions)
                 .await;
         }
 
@@ -1390,6 +1416,111 @@ impl Session {
     pub(crate) async fn provider(&self) -> ModelProviderInfo {
         let state = self.state.lock().await;
         state.session_configuration.provider.clone()
+    }
+
+    async fn refresh_runtime_permissions_for_current_turn(
+        &self,
+        runtime_permissions: &RuntimeTurnPermissionsSnapshot,
+    ) {
+        let turn_contexts = {
+            let active = self.active_turn.lock().await;
+            let Some(active_turn) = active.as_ref() else {
+                return;
+            };
+            active_turn
+                .tasks
+                .values()
+                .map(|task| Arc::clone(&task.turn_context))
+                .collect::<Vec<_>>()
+        };
+
+        for turn_context in turn_contexts {
+            turn_context.replace_runtime_permissions(runtime_permissions.clone());
+        }
+    }
+
+    async fn refresh_pending_interactive_requests(
+        &self,
+        runtime_permissions: &RuntimeTurnPermissionsSnapshot,
+    ) {
+        let (turn_context, turn_state) = {
+            let active = self.active_turn.lock().await;
+            let Some(active_turn) = active.as_ref() else {
+                return;
+            };
+            let Some((_, task)) = active_turn.tasks.first() else {
+                return;
+            };
+            (
+                Arc::clone(&task.turn_context),
+                Arc::clone(&active_turn.turn_state),
+            )
+        };
+        let resolved_requests = turn_state
+            .lock()
+            .await
+            .reevaluate_runtime_permissions(runtime_permissions);
+
+        for resolved in resolved_requests {
+            match resolved {
+                PendingInteractiveResolution::Approval {
+                    request,
+                    decision,
+                    tx,
+                } => {
+                    tx.send(decision).ok();
+                    self.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::InteractiveRequestResolved(InteractiveRequestResolvedEvent {
+                            turn_id: Some(turn_context.sub_id.clone()),
+                            request,
+                        }),
+                    )
+                    .await;
+                }
+                PendingInteractiveResolution::RequestPermissions {
+                    request,
+                    response,
+                    tx,
+                } => {
+                    tx.send(response).ok();
+                    self.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::InteractiveRequestResolved(InteractiveRequestResolvedEvent {
+                            turn_id: Some(turn_context.sub_id.clone()),
+                            request,
+                        }),
+                    )
+                    .await;
+                }
+                PendingInteractiveResolution::Elicitation {
+                    request,
+                    response,
+                    tx,
+                } => {
+                    tx.send(response).ok();
+                    self.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::InteractiveRequestResolved(InteractiveRequestResolvedEvent {
+                            turn_id: Some(turn_context.sub_id.clone()),
+                            request,
+                        }),
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+
+    async fn refresh_runtime_permissions_for_mcp(
+        &self,
+        runtime_permissions: &RuntimeTurnPermissionsSnapshot,
+    ) {
+        let mcp_connection_manager = self.services.mcp_connection_manager.read().await;
+        let approval_policy = Constrained::allow_any(runtime_permissions.approval_policy);
+        mcp_connection_manager.set_approval_policy(&approval_policy);
+        mcp_connection_manager
+            .set_permission_profile(runtime_permissions.permission_profile.clone());
     }
 
     pub(crate) async fn reload_user_config_layer(&self) {
@@ -1886,7 +2017,15 @@ impl Session {
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(effective_approval_id.clone(), tx_approve)
+                    ts.insert_pending_approval(
+                        effective_approval_id.clone(),
+                        PendingApprovalRequest {
+                            request: InteractiveRequestId::ExecApproval {
+                                id: effective_approval_id.clone(),
+                            },
+                            tx: tx_approve,
+                        },
+                    )
                 }
                 None => None,
             }
@@ -1954,7 +2093,15 @@ impl Session {
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(approval_id.clone(), tx_approve)
+                    ts.insert_pending_approval(
+                        approval_id.clone(),
+                        PendingApprovalRequest {
+                            request: InteractiveRequestId::ApplyPatch {
+                                id: approval_id.clone(),
+                            },
+                            tx: tx_approve,
+                        },
+                    )
                 }
                 None => None,
             }
@@ -2380,8 +2527,8 @@ impl Session {
             }
         };
         match entry {
-            Some(tx_approve) => {
-                tx_approve.send(decision).ok();
+            Some(entry) => {
+                entry.tx.send(decision).ok();
             }
             None => {
                 warn!("No pending approval found for call_id: {approval_id}");

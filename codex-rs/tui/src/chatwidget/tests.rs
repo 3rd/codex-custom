@@ -101,7 +101,6 @@ pub(super) use codex_app_server_protocol::RateLimitReachedType;
 pub(super) use codex_app_server_protocol::RateLimitSnapshot;
 pub(super) use codex_app_server_protocol::RateLimitWindow;
 pub(super) use codex_app_server_protocol::ReasoningSummaryTextDeltaNotification;
-pub(super) use codex_app_server_protocol::ReviewTarget;
 pub(super) use codex_app_server_protocol::ServerNotification;
 pub(super) use codex_app_server_protocol::SkillSummary;
 pub(super) use codex_app_server_protocol::ThreadClosedNotification;

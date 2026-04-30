@@ -477,12 +477,6 @@ impl TurnState {
 }
 
 impl ActiveTurn {
-    /// Clear any pending interactive requests buffered for the current turn.
-    pub(crate) async fn clear_pending_interactive_requests(&self) {
-        let mut ts = self.turn_state.lock().await;
-        ts.clear_pending_interactive_requests();
-    }
-
     pub(crate) async fn clear_pending(&self) {
         let mut ts = self.turn_state.lock().await;
         ts.clear_pending();

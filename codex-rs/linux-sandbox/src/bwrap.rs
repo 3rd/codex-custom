@@ -643,7 +643,12 @@ fn append_protected_create_targets_for_writable_root(
         {
             path = target.join(relative_path);
         }
-        if read_only_subpaths.iter().any(|subpath| subpath == &path) || path.exists() {
+        let needs_project_metadata_create_target =
+            is_project_metadata_mount_point(&path) && !path.exists();
+        if (read_only_subpaths.iter().any(|subpath| subpath == &path)
+            && !needs_project_metadata_create_target)
+            || path.exists()
+        {
             continue;
         }
         bwrap_args
@@ -1723,17 +1728,14 @@ mod tests {
 
         assert_empty_file_bound_without_perms(&args.args, &blocked);
         assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".git"));
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".agents"));
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".codex"));
         assert_eq!(args.preserved_files.len(), 1);
         assert_eq!(
             synthetic_mount_target_paths(&args),
-            vec![
-                blocked.clone(),
-                workspace.join(".git"),
-                workspace.join(".agents"),
-                workspace.join(".codex"),
-            ]
+            vec![blocked.clone(), workspace.join(".git")]
+        );
+        assert_eq!(
+            protected_create_target_paths(&args),
+            vec![workspace.join(".agents"), workspace.join(".codex")]
         );
         assert!(
             !blocked.exists(),
@@ -1764,15 +1766,10 @@ mod tests {
         let dot_git_str = path_to_string(&dot_git);
 
         assert_empty_file_bound_without_perms(&args.args, &dot_git);
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".agents"));
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".codex"));
+        assert_eq!(synthetic_mount_target_paths(&args), vec![dot_git.clone()]);
         assert_eq!(
-            synthetic_mount_target_paths(&args),
-            vec![
-                dot_git.clone(),
-                workspace.join(".agents"),
-                workspace.join(".codex"),
-            ]
+            protected_create_target_paths(&args),
+            vec![workspace.join(".agents"), workspace.join(".codex")]
         );
         assert!(
             !args
@@ -1809,8 +1806,6 @@ mod tests {
 
         let args = create_filesystem_args(&policy, &workspace, NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
             .expect("filesystem args");
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".agents"));
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".codex"));
         let dot_git_str = path_to_string(&dot_git);
         assert!(
             !args
@@ -1825,7 +1820,7 @@ mod tests {
         );
         assert_eq!(
             protected_create_target_paths(&args),
-            vec![dot_git],
+            vec![dot_git, workspace.join(".agents"), workspace.join(".codex")],
             "missing child .git should fail through protected create cleanup",
         );
     }
@@ -1856,8 +1851,6 @@ mod tests {
         let args =
             create_filesystem_args(&policy, &link_workspace, NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
                 .expect("filesystem args");
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".agents"));
-        assert_empty_directory_mounted_read_only(&args.args, &workspace.join(".codex"));
         let dot_git_str = path_to_string(&dot_git);
         assert!(
             !args
@@ -1872,7 +1865,7 @@ mod tests {
         );
         assert_eq!(
             protected_create_target_paths(&args),
-            vec![dot_git],
+            vec![dot_git, workspace.join(".agents"), workspace.join(".codex")],
             "symlinked missing child .git should fail through protected create cleanup",
         );
     }
@@ -1950,22 +1943,17 @@ mod tests {
         let args =
             create_filesystem_args(&policy, temp_dir.path(), NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
                 .expect("filesystem args");
-        let dot_git = path_to_string(&temp_dir.path().join(".git"));
-        let dot_agents = path_to_string(&temp_dir.path().join(".agents"));
-        let dot_codex = path_to_string(&temp_dir.path().join(".codex"));
+        let dot_git = temp_dir.path().join(".git");
+        let dot_agents = temp_dir.path().join(".agents");
+        let dot_codex = temp_dir.path().join(".codex");
 
-        assert_empty_directory_mounted_read_only(&args.args, Path::new(&dot_git));
-        assert_empty_directory_mounted_read_only(&args.args, Path::new(&dot_agents));
-        assert_empty_directory_mounted_read_only(&args.args, Path::new(&dot_codex));
+        assert_empty_directory_mounted_read_only(&args.args, &dot_git);
         assert!(args.preserved_files.is_empty());
-        let synthetic_targets = synthetic_mount_target_paths(&args);
-        assert!(synthetic_targets.contains(&PathBuf::from(&dot_git)));
-        assert!(synthetic_targets.contains(&PathBuf::from(&dot_agents)));
-        assert!(synthetic_targets.contains(&PathBuf::from(&dot_codex)));
+        assert_eq!(synthetic_mount_target_paths(&args), vec![dot_git]);
         assert_eq!(
             protected_create_target_paths(&args),
-            Vec::<PathBuf>::new(),
-            "missing protected metadata paths should fail at creation time through read-only mounts",
+            vec![dot_agents, dot_codex],
+            "missing protected metadata paths should fail through protected create cleanup",
         );
     }
 
@@ -2026,10 +2014,7 @@ mod tests {
         assert!(args.preserved_files.is_empty());
         assert_eq!(
             synthetic_mount_target_paths(&args),
-            vec![
-                PathBuf::from("/.git"),
-                PathBuf::from("/dev/.git"),
-            ]
+            vec![PathBuf::from("/.git"), PathBuf::from("/dev/.git"),]
         );
         assert_eq!(
             args.args,
@@ -2100,20 +2085,26 @@ mod tests {
         let args =
             create_filesystem_args(&policy, temp_dir.path(), NO_UNREADABLE_GLOB_SCAN_MAX_DEPTH)
                 .expect("filesystem args");
-        let dot_agents = path_to_string(&dot_agents);
-        let dot_codex = path_to_string(&dot_codex);
+        let dot_agents_str = path_to_string(&dot_agents);
+        let dot_codex_str = path_to_string(&dot_codex);
 
         assert!(
             !args
                 .args
                 .windows(3)
-                .any(|window| window == ["--ro-bind", "/dev/null", dot_agents.as_str()])
+                .any(|window| window == ["--ro-bind", "/dev/null", dot_agents_str.as_str()])
         );
         assert!(
             !args
                 .args
                 .windows(3)
-                .any(|window| window == ["--ro-bind", "/dev/null", dot_codex.as_str()])
+                .any(|window| window == ["--ro-bind", "/dev/null", dot_codex_str.as_str()])
+        );
+        assert!(!args.args.iter().any(|arg| arg == &dot_agents_str));
+        assert!(!args.args.iter().any(|arg| arg == &dot_codex_str));
+        assert_eq!(
+            protected_create_target_paths(&args),
+            vec![dot_agents, dot_codex]
         );
     }
 

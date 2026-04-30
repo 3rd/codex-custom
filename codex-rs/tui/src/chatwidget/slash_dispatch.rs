@@ -764,9 +764,14 @@ impl ChatWidget {
                 self.request_side_conversation(parent_thread_id, Some(user_message));
             }
             SlashCommand::Review if !trimmed.is_empty() => {
-                self.submit_op(AppCommand::review(ReviewTarget::Custom {
-                    instructions: args,
-                }));
+                self.submit_op(AppCommand::review(
+                    codex_protocol::protocol::ReviewRequest {
+                        target: codex_protocol::protocol::ReviewTarget::Custom {
+                            instructions: args,
+                        },
+                        user_facing_hint: None,
+                    },
+                ));
             }
             SlashCommand::Resume if !trimmed.is_empty() => {
                 self.app_event_tx

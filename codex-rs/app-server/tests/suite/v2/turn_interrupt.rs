@@ -341,12 +341,15 @@ async fn turn_context_update_resolves_pending_command_approval_when_switching_to
     let working_directory = tmp.path().join("workdir");
     std::fs::create_dir(&working_directory)?;
 
-    let server = create_mock_responses_server_sequence(vec![create_shell_command_sse_response(
-        shell_command.clone(),
-        Some(&working_directory),
-        Some(10_000),
-        "call_python_approval",
-    )?])
+    let server = create_mock_responses_server_sequence(vec![
+        create_shell_command_sse_response(
+            shell_command.clone(),
+            Some(&working_directory),
+            Some(10_000),
+            "call_python_approval",
+        )?,
+        create_final_assistant_message_sse_response("done")?,
+    ])
     .await;
     create_config_toml(&codex_home, &server.uri(), "untrusted", "read-only")?;
 

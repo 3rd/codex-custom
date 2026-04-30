@@ -1190,7 +1190,7 @@ struct DangerModePermissions {
 impl DangerModePermissions {
     fn from_chat_config(config: &Config) -> Self {
         Self {
-            approval_policy: config.permissions.approval_policy.value(),
+            approval_policy: config.permissions.approval_policy.value().into(),
             approvals_reviewer: config.approvals_reviewer,
             permission_profile: config.permissions.permission_profile(),
         }
@@ -9935,7 +9935,7 @@ impl ChatWidget {
             .config
             .permissions
             .approval_policy
-            .can_set(&permissions.approval_policy)
+            .can_set(&permissions.approval_policy.to_core())
         {
             self.add_error_message(format!("Failed to set approval policy: {err}"));
             return;
@@ -9956,7 +9956,7 @@ impl ChatWidget {
             .config
             .permissions
             .approval_policy
-            .set(permissions.approval_policy)
+            .set(permissions.approval_policy.to_core())
         {
             tracing::warn!(%err, "failed to set approval_policy on chat config");
         }

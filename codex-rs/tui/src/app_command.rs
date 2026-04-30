@@ -1,16 +1,21 @@
 use std::path::PathBuf;
 
+use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::CommandExecutionApprovalDecision;
+use codex_app_server_protocol::FileChangeApprovalDecision;
+use codex_app_server_protocol::McpServerElicitationAction;
+use codex_app_server_protocol::RequestId as AppServerRequestId;
+use codex_app_server_protocol::ThreadRealtimeAudioChunk;
+use codex_app_server_protocol::ToolRequestUserInputResponse;
+use codex_app_server_protocol::UserInput;
 use codex_config::types::ApprovalsReviewer;
-use codex_protocol::approvals::ElicitationAction;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
-use codex_protocol::mcp::RequestId as McpRequestId;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::ConversationStartParams;
 use codex_protocol::protocol::ConversationTextParams;
@@ -19,8 +24,6 @@ use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
-use codex_protocol::request_user_input::RequestUserInputResponse;
-use codex_protocol::user_input::UserInput;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -32,11 +35,18 @@ pub(crate) enum AppCommand {
     Interrupt,
     CleanBackgroundTerminals,
     RealtimeConversationStart(ConversationStartParams),
-    RealtimeConversationAudio(ConversationAudioParams),
+    RealtimeConversationAudio(ThreadRealtimeAudioChunk),
     RealtimeConversationText(ConversationTextParams),
     RealtimeConversationClose,
     RunUserShellCommand {
         command: String,
+    },
+    AddToHistory {
+        text: String,
+    },
+    GetHistoryEntryRequest {
+        offset: usize,
+        log_id: u64,
     },
     UserTurn {
         items: Vec<UserInput>,
@@ -69,22 +79,22 @@ pub(crate) enum AppCommand {
     ExecApproval {
         id: String,
         turn_id: Option<String>,
-        decision: ReviewDecision,
+        decision: CommandExecutionApprovalDecision,
     },
     PatchApproval {
         id: String,
-        decision: ReviewDecision,
+        decision: FileChangeApprovalDecision,
     },
     ResolveElicitation {
         server_name: String,
-        request_id: McpRequestId,
-        decision: ElicitationAction,
+        request_id: AppServerRequestId,
+        decision: McpServerElicitationAction,
         content: Option<Value>,
         meta: Option<Value>,
     },
     UserInputAnswer {
         id: String,
-        response: RequestUserInputResponse,
+        response: ToolRequestUserInputResponse,
     },
     RequestPermissionsResponse {
         id: String,
@@ -118,11 +128,18 @@ pub(crate) enum AppCommandView<'a> {
     Interrupt,
     CleanBackgroundTerminals,
     RealtimeConversationStart(&'a ConversationStartParams),
-    RealtimeConversationAudio(&'a ConversationAudioParams),
+    RealtimeConversationAudio(&'a ThreadRealtimeAudioChunk),
     RealtimeConversationText(&'a ConversationTextParams),
     RealtimeConversationClose,
     RunUserShellCommand {
         command: &'a str,
+    },
+    AddToHistory {
+        text: &'a str,
+    },
+    GetHistoryEntryRequest {
+        offset: usize,
+        log_id: u64,
     },
     UserTurn {
         items: &'a [UserInput],
@@ -155,22 +172,22 @@ pub(crate) enum AppCommandView<'a> {
     ExecApproval {
         id: &'a str,
         turn_id: &'a Option<String>,
-        decision: &'a ReviewDecision,
+        decision: &'a CommandExecutionApprovalDecision,
     },
     PatchApproval {
         id: &'a str,
-        decision: &'a ReviewDecision,
+        decision: &'a FileChangeApprovalDecision,
     },
     ResolveElicitation {
         server_name: &'a str,
-        request_id: &'a McpRequestId,
-        decision: &'a ElicitationAction,
+        request_id: &'a AppServerRequestId,
+        decision: &'a McpServerElicitationAction,
         content: &'a Option<Value>,
         meta: &'a Option<Value>,
     },
     UserInputAnswer {
         id: &'a str,
-        response: &'a RequestUserInputResponse,
+        response: &'a ToolRequestUserInputResponse,
     },
     RequestPermissionsResponse {
         id: &'a str,
@@ -212,7 +229,7 @@ impl AppCommand {
     }
 
     #[cfg_attr(target_os = "linux", allow(dead_code))]
-    pub(crate) fn realtime_conversation_audio(params: ConversationAudioParams) -> Self {
+    pub(crate) fn realtime_conversation_audio(params: ThreadRealtimeAudioChunk) -> Self {
         Self::RealtimeConversationAudio(params)
     }
 
@@ -287,7 +304,7 @@ impl AppCommand {
     pub(crate) fn exec_approval(
         id: String,
         turn_id: Option<String>,
-        decision: ReviewDecision,
+        decision: CommandExecutionApprovalDecision,
     ) -> Self {
         Self::ExecApproval {
             id,
@@ -296,14 +313,14 @@ impl AppCommand {
         }
     }
 
-    pub(crate) fn patch_approval(id: String, decision: ReviewDecision) -> Self {
+    pub(crate) fn patch_approval(id: String, decision: FileChangeApprovalDecision) -> Self {
         Self::PatchApproval { id, decision }
     }
 
     pub(crate) fn resolve_elicitation(
         server_name: String,
-        request_id: McpRequestId,
-        decision: ElicitationAction,
+        request_id: AppServerRequestId,
+        decision: McpServerElicitationAction,
         content: Option<Value>,
         meta: Option<Value>,
     ) -> Self {
@@ -316,7 +333,7 @@ impl AppCommand {
         }
     }
 
-    pub(crate) fn user_input_answer(id: String, response: RequestUserInputResponse) -> Self {
+    pub(crate) fn user_input_answer(id: String, response: ToolRequestUserInputResponse) -> Self {
         Self::UserInputAnswer { id, response }
     }
 
@@ -343,6 +360,14 @@ impl AppCommand {
         Self::SetThreadName { name }
     }
 
+    pub(crate) fn add_to_history(text: String) -> Self {
+        Self::AddToHistory { text }
+    }
+
+    pub(crate) fn history_lookup(offset: usize, log_id: u64) -> Self {
+        Self::GetHistoryEntryRequest { offset, log_id }
+    }
+
     pub(crate) fn thread_rollback(num_turns: u32) -> Self {
         Self::ThreadRollback { num_turns }
     }
@@ -360,10 +385,16 @@ impl AppCommand {
             Self::Interrupt => Op::Interrupt,
             Self::CleanBackgroundTerminals => Op::CleanBackgroundTerminals,
             Self::RealtimeConversationStart(params) => Op::RealtimeConversationStart(params),
-            Self::RealtimeConversationAudio(params) => Op::RealtimeConversationAudio(params),
+            Self::RealtimeConversationAudio(params) => {
+                Op::RealtimeConversationAudio(thread_realtime_audio_to_core(params))
+            }
             Self::RealtimeConversationText(params) => Op::RealtimeConversationText(params),
             Self::RealtimeConversationClose => Op::RealtimeConversationClose,
             Self::RunUserShellCommand { command } => Op::RunUserShellCommand { command },
+            Self::AddToHistory { text } => Op::AddToHistory { text },
+            Self::GetHistoryEntryRequest { offset, log_id } => {
+                Op::GetHistoryEntryRequest { offset, log_id }
+            }
             Self::UserTurn {
                 items,
                 cwd,
@@ -388,10 +419,10 @@ impl AppCommand {
                         )
                     });
                 Op::UserTurn {
-                    items,
+                    items: items.into_iter().map(UserInput::into_core).collect(),
                     environments: None,
                     cwd,
-                    approval_policy,
+                    approval_policy: approval_policy.to_core(),
                     approvals_reviewer,
                     sandbox_policy,
                     permission_profile: Some(permission_profile),
@@ -419,7 +450,7 @@ impl AppCommand {
                 personality,
             } => Op::OverrideTurnContext {
                 cwd,
-                approval_policy,
+                approval_policy: approval_policy.map(AskForApproval::to_core),
                 approvals_reviewer,
                 sandbox_policy,
                 permission_profile,
@@ -438,9 +469,12 @@ impl AppCommand {
             } => Op::ExecApproval {
                 id,
                 turn_id,
-                decision,
+                decision: command_execution_decision_to_core(decision),
             },
-            Self::PatchApproval { id, decision } => Op::PatchApproval { id, decision },
+            Self::PatchApproval { id, decision } => Op::PatchApproval {
+                id,
+                decision: file_change_decision_to_core(decision),
+            },
             Self::ResolveElicitation {
                 server_name,
                 request_id,
@@ -449,12 +483,15 @@ impl AppCommand {
                 meta,
             } => Op::ResolveElicitation {
                 server_name,
-                request_id,
-                decision,
+                request_id: app_server_request_id_to_core(request_id),
+                decision: decision.to_core(),
                 content,
                 meta,
             },
-            Self::UserInputAnswer { id, response } => Op::UserInputAnswer { id, response },
+            Self::UserInputAnswer { id, response } => Op::UserInputAnswer {
+                id,
+                response: tool_request_user_input_response_to_core(response),
+            },
             Self::RequestPermissionsResponse { id, response } => {
                 Op::RequestPermissionsResponse { id, response }
             }
@@ -492,6 +529,13 @@ impl AppCommand {
             Self::RealtimeConversationClose => AppCommandView::RealtimeConversationClose,
             Self::RunUserShellCommand { command } => {
                 AppCommandView::RunUserShellCommand { command }
+            }
+            Self::AddToHistory { text } => AppCommandView::AddToHistory { text },
+            Self::GetHistoryEntryRequest { offset, log_id } => {
+                AppCommandView::GetHistoryEntryRequest {
+                    offset: *offset,
+                    log_id: *log_id,
+                }
             }
             Self::UserTurn {
                 items,
@@ -602,10 +646,16 @@ impl From<Op> for AppCommand {
             Op::Interrupt => Self::Interrupt,
             Op::CleanBackgroundTerminals => Self::CleanBackgroundTerminals,
             Op::RealtimeConversationStart(params) => Self::RealtimeConversationStart(params),
-            Op::RealtimeConversationAudio(params) => Self::RealtimeConversationAudio(params),
+            Op::RealtimeConversationAudio(params) => {
+                Self::RealtimeConversationAudio(thread_realtime_audio_from_core(params))
+            }
             Op::RealtimeConversationText(params) => Self::RealtimeConversationText(params),
             Op::RealtimeConversationClose => Self::RealtimeConversationClose,
             Op::RunUserShellCommand { command } => Self::RunUserShellCommand { command },
+            Op::AddToHistory { text } => Self::AddToHistory { text },
+            Op::GetHistoryEntryRequest { offset, log_id } => {
+                Self::GetHistoryEntryRequest { offset, log_id }
+            }
             Op::UserTurn {
                 items,
                 environments,
@@ -628,9 +678,9 @@ impl From<Op> for AppCommand {
                         .is_ok_and(|compatible_policy| compatible_policy == sandbox_policy)
                 {
                     Self::UserTurn {
-                        items,
+                        items: items.into_iter().map(Into::into).collect(),
                         cwd,
-                        approval_policy,
+                        approval_policy: approval_policy.into(),
                         approvals_reviewer,
                         permission_profile,
                         model,
@@ -675,7 +725,7 @@ impl From<Op> for AppCommand {
                 personality,
             } => Self::OverrideTurnContext {
                 cwd,
-                approval_policy,
+                approval_policy: approval_policy.map(Into::into),
                 approvals_reviewer,
                 sandbox_policy,
                 permission_profile,
@@ -694,9 +744,12 @@ impl From<Op> for AppCommand {
             } => Self::ExecApproval {
                 id,
                 turn_id,
-                decision,
+                decision: decision.into(),
             },
-            Op::PatchApproval { id, decision } => Self::PatchApproval { id, decision },
+            Op::PatchApproval { id, decision } => Self::PatchApproval {
+                id,
+                decision: file_change_decision_from_core(decision),
+            },
             Op::ResolveElicitation {
                 server_name,
                 request_id,
@@ -705,12 +758,15 @@ impl From<Op> for AppCommand {
                 meta,
             } => Self::ResolveElicitation {
                 server_name,
-                request_id,
-                decision,
+                request_id: core_request_id_to_app_server(request_id),
+                decision: elicitation_action_to_app_server(decision),
                 content,
                 meta,
             },
-            Op::UserInputAnswer { id, response } => Self::UserInputAnswer { id, response },
+            Op::UserInputAnswer { id, response } => Self::UserInputAnswer {
+                id,
+                response: tool_request_user_input_response_from_core(response),
+            },
             Op::RequestPermissionsResponse { id, response } => {
                 Self::RequestPermissionsResponse { id, response }
             }
@@ -756,5 +812,132 @@ impl From<&AppCommand> for AppCommand {
 impl From<AppCommand> for Op {
     fn from(value: AppCommand) -> Self {
         value.into_core()
+    }
+}
+
+fn app_server_request_id_to_core(request_id: AppServerRequestId) -> codex_protocol::mcp::RequestId {
+    match request_id {
+        AppServerRequestId::String(value) => codex_protocol::mcp::RequestId::String(value),
+        AppServerRequestId::Integer(value) => codex_protocol::mcp::RequestId::Integer(value),
+    }
+}
+
+fn core_request_id_to_app_server(request_id: codex_protocol::mcp::RequestId) -> AppServerRequestId {
+    match request_id {
+        codex_protocol::mcp::RequestId::String(value) => AppServerRequestId::String(value),
+        codex_protocol::mcp::RequestId::Integer(value) => AppServerRequestId::Integer(value),
+    }
+}
+
+fn elicitation_action_to_app_server(
+    action: codex_protocol::approvals::ElicitationAction,
+) -> McpServerElicitationAction {
+    match action {
+        codex_protocol::approvals::ElicitationAction::Accept => McpServerElicitationAction::Accept,
+        codex_protocol::approvals::ElicitationAction::Decline => {
+            McpServerElicitationAction::Decline
+        }
+        codex_protocol::approvals::ElicitationAction::Cancel => McpServerElicitationAction::Cancel,
+    }
+}
+
+fn thread_realtime_audio_to_core(frame: ThreadRealtimeAudioChunk) -> ConversationAudioParams {
+    ConversationAudioParams {
+        frame: codex_protocol::protocol::RealtimeAudioFrame {
+            data: frame.data,
+            sample_rate: frame.sample_rate,
+            num_channels: frame.num_channels,
+            samples_per_channel: frame.samples_per_channel,
+            item_id: frame.item_id,
+        },
+    }
+}
+
+fn thread_realtime_audio_from_core(params: ConversationAudioParams) -> ThreadRealtimeAudioChunk {
+    ThreadRealtimeAudioChunk {
+        data: params.frame.data,
+        sample_rate: params.frame.sample_rate,
+        num_channels: params.frame.num_channels,
+        samples_per_channel: params.frame.samples_per_channel,
+        item_id: params.frame.item_id,
+    }
+}
+
+fn file_change_decision_to_core(decision: FileChangeApprovalDecision) -> ReviewDecision {
+    match decision {
+        FileChangeApprovalDecision::Accept => ReviewDecision::Approved,
+        FileChangeApprovalDecision::AcceptForSession => ReviewDecision::ApprovedForSession,
+        FileChangeApprovalDecision::Decline => ReviewDecision::Denied,
+        FileChangeApprovalDecision::Cancel => ReviewDecision::Abort,
+    }
+}
+
+fn command_execution_decision_to_core(
+    decision: CommandExecutionApprovalDecision,
+) -> ReviewDecision {
+    match decision {
+        CommandExecutionApprovalDecision::Accept => ReviewDecision::Approved,
+        CommandExecutionApprovalDecision::AcceptForSession => ReviewDecision::ApprovedForSession,
+        CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
+            execpolicy_amendment,
+        } => ReviewDecision::ApprovedExecpolicyAmendment {
+            proposed_execpolicy_amendment: execpolicy_amendment.into_core(),
+        },
+        CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+            network_policy_amendment,
+        } => ReviewDecision::NetworkPolicyAmendment {
+            network_policy_amendment: network_policy_amendment.into_core(),
+        },
+        CommandExecutionApprovalDecision::Decline => ReviewDecision::Denied,
+        CommandExecutionApprovalDecision::Cancel => ReviewDecision::Abort,
+    }
+}
+
+fn file_change_decision_from_core(decision: ReviewDecision) -> FileChangeApprovalDecision {
+    match decision {
+        ReviewDecision::Approved
+        | ReviewDecision::ApprovedExecpolicyAmendment { .. }
+        | ReviewDecision::NetworkPolicyAmendment { .. } => FileChangeApprovalDecision::Accept,
+        ReviewDecision::ApprovedForSession => FileChangeApprovalDecision::AcceptForSession,
+        ReviewDecision::Denied | ReviewDecision::TimedOut => FileChangeApprovalDecision::Decline,
+        ReviewDecision::Abort => FileChangeApprovalDecision::Cancel,
+    }
+}
+
+fn tool_request_user_input_response_to_core(
+    response: ToolRequestUserInputResponse,
+) -> codex_protocol::request_user_input::RequestUserInputResponse {
+    codex_protocol::request_user_input::RequestUserInputResponse {
+        answers: response
+            .answers
+            .into_iter()
+            .map(|(id, answer)| {
+                (
+                    id,
+                    codex_protocol::request_user_input::RequestUserInputAnswer {
+                        answers: answer.answers,
+                    },
+                )
+            })
+            .collect(),
+    }
+}
+
+fn tool_request_user_input_response_from_core(
+    response: codex_protocol::request_user_input::RequestUserInputResponse,
+) -> ToolRequestUserInputResponse {
+    ToolRequestUserInputResponse {
+        answers: response
+            .answers
+            .into_iter()
+            .map(|(id, answer)| {
+                (
+                    id,
+                    codex_app_server_protocol::ToolRequestUserInputAnswer {
+                        answers: answer.answers,
+                    },
+                )
+            })
+            .collect(),
     }
 }

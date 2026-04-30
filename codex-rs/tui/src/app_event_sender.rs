@@ -14,6 +14,8 @@ use codex_app_server_protocol::ReviewTarget;
 use codex_app_server_protocol::ThreadRealtimeAudioChunk;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::ReviewRequest;
+use codex_protocol::protocol::ReviewTarget as CoreReviewTarget;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -56,7 +58,10 @@ impl AppEventSender {
     }
 
     pub(crate) fn review(&self, target: ReviewTarget) {
-        self.send(AppEvent::CodexOp(AppCommand::review(target)));
+        self.send(AppEvent::CodexOp(AppCommand::review(ReviewRequest {
+            target: review_target_to_core(target),
+            user_facing_hint: None,
+        })));
     }
 
     pub(crate) fn list_skills(&self, cwds: Vec<PathBuf>, force_reload: bool) {
@@ -128,5 +133,14 @@ impl AppEventSender {
             thread_id,
             op: AppCommand::resolve_elicitation(server_name, request_id, decision, content, meta),
         });
+    }
+}
+
+fn review_target_to_core(target: ReviewTarget) -> CoreReviewTarget {
+    match target {
+        ReviewTarget::UncommittedChanges => CoreReviewTarget::UncommittedChanges,
+        ReviewTarget::BaseBranch { branch } => CoreReviewTarget::BaseBranch { branch },
+        ReviewTarget::Commit { sha, title } => CoreReviewTarget::Commit { sha, title },
+        ReviewTarget::Custom { instructions } => CoreReviewTarget::Custom { instructions },
     }
 }

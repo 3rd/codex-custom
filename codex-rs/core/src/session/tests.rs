@@ -48,8 +48,12 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_protocol::protocol::ThreadMemoryMode;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
+use codex_thread_store::LocalThreadStoreConfig;
+use codex_thread_store::ThreadPersistenceMetadata;
 use tracing::Span;
 
 use crate::goals::ExternalGoalPreviousStatus;
@@ -1767,9 +1771,6 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
         .fork_thread(
             usize::MAX,
             fork_config.clone(),
-            std::sync::Arc::new(codex_thread_store::LocalThreadStore::new(
-                codex_rollout::RolloutConfig::from_view(&fork_config),
-            )),
             rollout_path,
             /*thread_source*/ None,
             /*persist_extended_history*/ false,
@@ -2820,6 +2821,11 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
             thread_source: None,
             base_instructions: BaseInstructions::default(),
             dynamic_tools: Vec::new(),
+            metadata: ThreadPersistenceMetadata {
+                cwd: None,
+                model_provider: "openai".to_string(),
+                memory_mode: ThreadMemoryMode::Disabled,
+            },
             event_persistence_mode: ThreadEventPersistenceMode::Limited,
         },
     )
@@ -3771,7 +3777,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 
     let plugin_outcome = services
         .plugins_manager
-        .plugins_for_config(&per_turn_config)
+        .plugins_for_config(&per_turn_config.plugins_config_input())
         .await;
     let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
     let skills_input =
@@ -5196,6 +5202,11 @@ async fn shutdown_complete_does_not_append_to_thread_store_after_shutdown() {
             thread_source: None,
             base_instructions: BaseInstructions::default(),
             dynamic_tools: Vec::new(),
+            metadata: ThreadPersistenceMetadata {
+                cwd: None,
+                model_provider: "openai".to_string(),
+                memory_mode: ThreadMemoryMode::Disabled,
+            },
             event_persistence_mode: ThreadEventPersistenceMode::Limited,
         },
     )
@@ -5610,7 +5621,7 @@ where
 
     let plugin_outcome = services
         .plugins_manager
-        .plugins_for_config(&per_turn_config)
+        .plugins_for_config(&per_turn_config.plugins_config_input())
         .await;
     let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
     let skills_input =

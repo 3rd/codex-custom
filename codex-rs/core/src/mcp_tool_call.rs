@@ -1007,7 +1007,7 @@ async fn custom_mcp_tool_approval_mode(
 
     sess.services
         .plugins_manager
-        .plugins_for_config(turn_context.config.as_ref())
+        .plugins_for_config(&turn_context.config.plugins_config_input())
         .await
         .plugins()
         .iter()
@@ -1152,6 +1152,7 @@ async fn maybe_request_mcp_tool_approval(
     if mcp_permission_prompt_is_auto_approved(
         runtime_permissions.approval_policy,
         &runtime_permissions.permission_profile,
+        McpPermissionPromptAutoApproveContext::default(),
     ) {
         return None;
     }
@@ -2075,7 +2076,7 @@ async fn persist_non_app_mcp_tool_approval(
     let plugin_config_name = sess
         .services
         .plugins_manager
-        .plugins_for_config(config)
+        .plugins_for_config(&config.plugins_config_input())
         .await
         .plugins()
         .iter()

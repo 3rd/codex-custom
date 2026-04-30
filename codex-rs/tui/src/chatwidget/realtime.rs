@@ -7,6 +7,9 @@ use codex_app_server_protocol::ThreadRealtimeOutputAudioDeltaNotification;
 use codex_app_server_protocol::ThreadRealtimeStartTransport;
 use codex_app_server_protocol::ThreadRealtimeStartedNotification;
 use codex_config::config_toml::RealtimeTransport;
+use codex_protocol::protocol::ConversationStartParams;
+use codex_protocol::protocol::ConversationStartTransport;
+use codex_protocol::protocol::RealtimeOutputModality;
 use codex_realtime_webrtc::RealtimeWebrtcEvent;
 use codex_realtime_webrtc::RealtimeWebrtcSession;
 use codex_realtime_webrtc::RealtimeWebrtcSessionHandle;
@@ -14,6 +17,15 @@ use codex_realtime_webrtc::RealtimeWebrtcSessionHandle;
 use std::sync::atomic::AtomicU16;
 #[cfg(not(target_os = "linux"))]
 use std::time::Duration;
+
+fn thread_realtime_transport_to_core(
+    transport: ThreadRealtimeStartTransport,
+) -> ConversationStartTransport {
+    match transport {
+        ThreadRealtimeStartTransport::Websocket => ConversationStartTransport::Websocket,
+        ThreadRealtimeStartTransport::Webrtc { sdp } => ConversationStartTransport::Webrtc { sdp },
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) enum RealtimeConversationPhase {
@@ -111,11 +123,13 @@ impl ChatWidget {
         transport: Option<ThreadRealtimeStartTransport>,
     ) {
         self.submit_op(AppCommand::realtime_conversation_start(
-            transport,
-            self.config
-                .realtime
-                .voice
-                .and_then(|voice| serde_json::to_value(voice).ok()),
+            ConversationStartParams {
+                output_modality: RealtimeOutputModality::Audio,
+                prompt: None,
+                realtime_session_id: None,
+                transport: transport.map(thread_realtime_transport_to_core),
+                voice: self.config.realtime.voice,
+            },
         ));
     }
 

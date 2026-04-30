@@ -73,6 +73,8 @@ use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadRealtimeAppendAudioParams;
 use codex_app_server_protocol::ThreadRealtimeAppendAudioResponse;
+use codex_app_server_protocol::ThreadRealtimeAppendTextParams;
+use codex_app_server_protocol::ThreadRealtimeAppendTextResponse;
 use codex_app_server_protocol::ThreadRealtimeAudioChunk;
 use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStartResponse;
@@ -94,6 +96,8 @@ use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ThreadUnsubscribeParams;
 use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnContextUpdateParams;
+use codex_app_server_protocol::TurnContextUpdateResponse;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::TurnStartParams;
@@ -588,6 +592,19 @@ impl AppServerSession {
         Ok(())
     }
 
+    pub(crate) async fn turn_context_update(
+        &mut self,
+        params: TurnContextUpdateParams,
+    ) -> Result<()> {
+        let request_id = self.next_request_id();
+        let _: TurnContextUpdateResponse = self
+            .client
+            .request_typed(ClientRequest::TurnContextUpdate { request_id, params })
+            .await
+            .wrap_err("turn/contextUpdate failed in TUI")?;
+        Ok(())
+    }
+
     pub(crate) async fn startup_interrupt(&mut self, thread_id: ThreadId) -> Result<()> {
         self.turn_interrupt(thread_id, String::new()).await
     }
@@ -920,6 +937,26 @@ impl AppServerSession {
             })
             .await
             .wrap_err("thread/realtime/appendAudio failed in TUI")?;
+        Ok(())
+    }
+
+    pub(crate) async fn thread_realtime_text(
+        &mut self,
+        thread_id: ThreadId,
+        text: String,
+    ) -> Result<()> {
+        let request_id = self.next_request_id();
+        let _: ThreadRealtimeAppendTextResponse = self
+            .client
+            .request_typed(ClientRequest::ThreadRealtimeAppendText {
+                request_id,
+                params: ThreadRealtimeAppendTextParams {
+                    thread_id: thread_id.to_string(),
+                    text,
+                },
+            })
+            .await
+            .wrap_err("thread/realtime/appendText failed in TUI")?;
         Ok(())
     }
 

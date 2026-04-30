@@ -379,6 +379,34 @@ pub struct ApplyPatchApprovalRequestEvent {
     pub grant_root: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, JsonSchema, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(tag = "kind", rename_all = "snake_case")]
+pub enum InteractiveRequestId {
+    ExecApproval {
+        id: String,
+    },
+    ApplyPatch {
+        id: String,
+    },
+    RequestPermissions {
+        call_id: String,
+    },
+    McpElicitation {
+        server_name: String,
+        #[ts(type = "string | number")]
+        request_id: RequestId,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+pub struct InteractiveRequestResolvedEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub turn_id: Option<String>,
+    pub request: InteractiveRequestId,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

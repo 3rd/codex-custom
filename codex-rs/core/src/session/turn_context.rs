@@ -2,6 +2,7 @@ use super::*;
 use crate::SkillLoadOutcome;
 use crate::config::GhostSnapshotConfig;
 use crate::environment_selection::ResolvedTurnEnvironments;
+use crate::state::RuntimeTurnPermissionsHandle;
 use codex_model_provider::SharedModelProvider;
 use codex_model_provider::create_model_provider;
 use codex_protocol::SessionId;
@@ -83,6 +84,7 @@ pub(crate) struct TurnContext {
     pub(crate) permission_profile: PermissionProfile,
     pub(crate) network: Option<NetworkProxy>,
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
+    pub(crate) runtime_permissions: RuntimeTurnPermissionsHandle,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
     pub(crate) tools_config: ToolsConfig,
     pub(crate) features: ManagedFeatures,
@@ -163,12 +165,9 @@ impl TurnContext {
         self.runtime_permissions.replace(snapshot);
     }
 
+    #[cfg(test)]
     pub(crate) fn effective_approval_policy(&self) -> AskForApproval {
         self.runtime_permissions().approval_policy
-    }
-
-    pub(crate) fn effective_approvals_reviewer(&self) -> ApprovalsReviewer {
-        self.runtime_permissions().approvals_reviewer
     }
 
     #[cfg(test)]
@@ -214,6 +213,7 @@ impl TurnContext {
             Some(reasoning_effort),
             /*developer_instructions*/ None,
         );
+        let runtime_permissions = self.runtime_permissions();
         let features = self.features.clone();
         let provider_capabilities = self.provider.capabilities();
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -227,8 +227,8 @@ impl TurnContext {
             ),
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
-            permission_profile: &self.permission_profile,
-            windows_sandbox_level: self.windows_sandbox_level,
+            permission_profile: &runtime_permissions.permission_profile,
+            windows_sandbox_level: runtime_permissions.windows_sandbox_level,
         })
         .with_namespace_tools_capability(provider_capabilities.namespace_tools)
         .with_image_generation_capability(provider_capabilities.image_generation)
@@ -287,6 +287,7 @@ impl TurnContext {
             permission_profile: self.permission_profile.clone(),
             network: self.network.clone(),
             windows_sandbox_level: self.windows_sandbox_level,
+            runtime_permissions: self.runtime_permissions.clone(),
             shell_environment_policy: self.shell_environment_policy.clone(),
             tools_config,
             features,
@@ -582,6 +583,9 @@ impl Session {
             permission_profile: session_configuration.permission_profile(),
             network,
             windows_sandbox_level: session_configuration.windows_sandbox_level,
+            runtime_permissions: RuntimeTurnPermissionsHandle::new(
+                session_configuration.runtime_turn_permissions_snapshot(),
+            ),
             shell_environment_policy: per_turn_config.permissions.shell_environment_policy.clone(),
             tools_config,
             features: per_turn_config.features.clone(),

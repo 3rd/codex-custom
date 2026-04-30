@@ -740,6 +740,7 @@ async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context
             cwd: None,
             approval_policy: Some(AskForApproval::OnRequest),
             approvals_reviewer: Some(ApprovalsReviewer::AutoReview),
+            sandbox_policy: None,
             permission_profile: Some(PermissionProfile::workspace_write()),
             windows_sandbox_level: None,
             model: None,
@@ -831,7 +832,7 @@ async fn danger_mode_restores_guardian_approvals_permissions() {
     chat.enter_danger_mode();
     assert_eq!(
         chat.config.permissions.approval_policy.value(),
-        AskForApproval::Never
+        AskForApproval::Never.to_core()
     );
     assert_eq!(
         chat.config.permissions.permission_profile(),
@@ -842,7 +843,7 @@ async fn danger_mode_restores_guardian_approvals_permissions() {
     chat.exit_danger_mode();
     assert_eq!(
         chat.config.permissions.approval_policy.value(),
-        AskForApproval::OnRequest
+        AskForApproval::OnRequest.to_core()
     );
     assert!(matches!(
         chat.config.permissions.permission_profile(),

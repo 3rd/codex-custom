@@ -1084,10 +1084,10 @@ async fn custom_prompt_submit_sends_review_op() {
     // Expect AppEvent::CodexOp(Op::Review { .. }) with trimmed prompt
     let evt = rx.try_recv().expect("expected one app event");
     match evt {
-        AppEvent::CodexOp(Op::Review { target }) => {
+        AppEvent::CodexOp(Op::Review { review_request }) => {
             assert_eq!(
-                target,
-                ReviewTarget::Custom {
+                review_request.target,
+                codex_protocol::protocol::ReviewTarget::Custom {
                     instructions: "please audit dependencies".to_string(),
                 }
             );

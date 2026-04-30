@@ -352,9 +352,7 @@ async fn uses_claude_md_when_agents_missing() {
 
     assert_eq!(res, "claude instructions");
 
-    let discovery = discover_project_doc_paths(&cfg)
-        .await
-        .expect("discover paths");
+    let discovery = agents_md_paths(&cfg).await.expect("discover paths");
     let expected = AbsolutePathBuf::try_from(
         dunce::canonicalize(tmp.path().join("CLAUDE.md")).expect("canonical claude doc path"),
     )
@@ -380,9 +378,7 @@ async fn uses_nested_claude_md_when_other_builtins_are_missing() {
 
     assert_eq!(res, "nested claude instructions");
 
-    let discovery = discover_project_doc_paths(&cfg)
-        .await
-        .expect("discover paths");
+    let discovery = agents_md_paths(&cfg).await.expect("discover paths");
     let expected = AbsolutePathBuf::try_from(
         dunce::canonicalize(tmp.path().join(".claude").join("CLAUDE.md"))
             .expect("canonical nested claude doc path"),
@@ -432,9 +428,7 @@ async fn agents_md_preferred_over_builtin_claude_fallbacks() {
 
     assert_eq!(res, "agents instructions");
 
-    let discovery = discover_project_doc_paths(&cfg)
-        .await
-        .expect("discover paths");
+    let discovery = agents_md_paths(&cfg).await.expect("discover paths");
     let expected = AbsolutePathBuf::try_from(
         dunce::canonicalize(tmp.path().join("AGENTS.md")).expect("canonical agents doc path"),
     )
@@ -483,9 +477,7 @@ async fn built_in_claude_fallbacks_win_before_configured_fallbacks() {
 
     assert_eq!(res, "claude instructions");
 
-    let discovery = discover_project_doc_paths(&cfg)
-        .await
-        .expect("discover paths");
+    let discovery = agents_md_paths(&cfg).await.expect("discover paths");
     let expected = AbsolutePathBuf::try_from(
         dunce::canonicalize(tmp.path().join("CLAUDE.md")).expect("canonical claude doc path"),
     )

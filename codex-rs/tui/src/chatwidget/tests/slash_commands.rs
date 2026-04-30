@@ -118,9 +118,18 @@ async fn queued_slash_review_with_args_dispatches_after_active_turn() {
     complete_turn_with_message(&mut chat, "turn-1", Some("done"));
 
     match op_rx.try_recv() {
-        Ok(Op::Review { target }) => assert_eq!(
-            target,
-            ReviewTarget::Custom {
+        Ok(Op::AddToHistory { .. }) => match op_rx.try_recv() {
+            Ok(Op::Review { review_request }) => assert_eq!(
+                review_request.target,
+                codex_protocol::protocol::ReviewTarget::Custom {
+                    instructions: "check regressions".to_string(),
+                }
+            ),
+            other => panic!("expected queued /review to submit review op, got {other:?}"),
+        },
+        Ok(Op::Review { review_request }) => assert_eq!(
+            review_request.target,
+            codex_protocol::protocol::ReviewTarget::Custom {
                 instructions: "check regressions".to_string(),
             }
         ),

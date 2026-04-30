@@ -5,6 +5,50 @@
 //! when the visible thread changes.
 
 use super::*;
+use crate::app_command::AppCommandView;
+use crate::app_event::HistoryLookupResponse;
+use crate::session_resume::read_session_model;
+use codex_protocol::protocol::ConversationStartTransport;
+use codex_protocol::protocol::Op;
+
+fn conversation_transport_to_app_server(
+    transport: ConversationStartTransport,
+) -> codex_app_server_protocol::ThreadRealtimeStartTransport {
+    match transport {
+        ConversationStartTransport::Websocket => {
+            codex_app_server_protocol::ThreadRealtimeStartTransport::Websocket
+        }
+        ConversationStartTransport::Webrtc { sdp } => {
+            codex_app_server_protocol::ThreadRealtimeStartTransport::Webrtc { sdp }
+        }
+    }
+}
+
+fn review_target_to_app_server(
+    target: &codex_protocol::protocol::ReviewTarget,
+) -> codex_app_server_protocol::ReviewTarget {
+    match target {
+        codex_protocol::protocol::ReviewTarget::UncommittedChanges => {
+            codex_app_server_protocol::ReviewTarget::UncommittedChanges
+        }
+        codex_protocol::protocol::ReviewTarget::BaseBranch { branch } => {
+            codex_app_server_protocol::ReviewTarget::BaseBranch {
+                branch: branch.clone(),
+            }
+        }
+        codex_protocol::protocol::ReviewTarget::Commit { sha, title } => {
+            codex_app_server_protocol::ReviewTarget::Commit {
+                sha: sha.clone(),
+                title: title.clone(),
+            }
+        }
+        codex_protocol::protocol::ReviewTarget::Custom { instructions } => {
+            codex_app_server_protocol::ReviewTarget::Custom {
+                instructions: instructions.clone(),
+            }
+        }
+    }
+}
 
 impl App {
     pub(super) async fn shutdown_current_thread(&mut self, app_server: &mut AppServerSession) {
@@ -213,24 +257,11 @@ impl App {
         let thread_label = Some(self.thread_label(thread_id));
         match request {
             ServerRequest::CommandExecutionRequestApproval { params, .. } => {
-                let network_approval_context = params
-                    .network_approval_context
-                    .clone()
-                    .map(network_approval_context_to_core);
-                let additional_permissions = params.additional_permissions.clone().map(Into::into);
-                let proposed_execpolicy_amendment = params
-                    .proposed_execpolicy_amendment
-                    .clone()
-                    .map(codex_app_server_protocol::ExecPolicyAmendment::into_core);
-                let proposed_network_policy_amendments = params
-                    .proposed_network_policy_amendments
-                    .clone()
-                    .map(|amendments| {
-                        amendments
-                            .into_iter()
-                            .map(codex_app_server_protocol::NetworkPolicyAmendment::into_core)
-                            .collect::<Vec<_>>()
-                    });
+                let network_approval_context = params.network_approval_context.clone();
+                let additional_permissions = params.additional_permissions.clone();
+                let proposed_execpolicy_amendment = params.proposed_execpolicy_amendment.clone();
+                let proposed_network_policy_amendments =
+                    params.proposed_network_policy_amendments.clone();
                 Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Exec {
                     thread_id,
                     thread_label,
@@ -247,12 +278,7 @@ impl App {
                     available_decisions: params
                         .available_decisions
                         .clone()
-                        .map(|decisions| {
-                            decisions
-                                .into_iter()
-                                .map(command_execution_decision_to_review_decision)
-                                .collect()
-                        })
+                        .map(|decisions| decisions.into_iter().collect())
                         .unwrap_or_else(|| {
                             default_exec_approval_decisions(
                                 network_approval_context.as_ref(),
@@ -278,7 +304,7 @@ impl App {
                     changes: self
                         .thread_file_change_changes(thread_id, &params.turn_id, &params.item_id)
                         .await
-                        .map(crate::app_server_approval_conversions::file_update_changes_to_core)
+                        .map(crate::app_server_approval_conversions::file_update_changes_to_display)
                         .unwrap_or_default(),
                 }),
             ),
@@ -672,7 +698,10 @@ impl App {
             }
             AppCommandView::Review { review_request } => {
                 app_server
-                    .review_start(thread_id, review_request.clone())
+                    .review_start(
+                        thread_id,
+                        review_target_to_app_server(&review_request.target),
+                    )
                     .await?;
                 Ok(true)
             }
@@ -684,7 +713,17 @@ impl App {
             }
             AppCommandView::RealtimeConversationStart(params) => {
                 app_server
-                    .thread_realtime_start(thread_id, params.clone())
+                    .thread_realtime_start(
+                        thread_id,
+                        params
+                            .transport
+                            .clone()
+                            .map(conversation_transport_to_app_server),
+                        params
+                            .voice
+                            .as_ref()
+                            .and_then(|voice| serde_json::to_value(voice).ok()),
+                    )
                     .await?;
                 Ok(true)
             }
@@ -696,7 +735,7 @@ impl App {
             }
             AppCommandView::RealtimeConversationText(params) => {
                 app_server
-                    .thread_realtime_text(thread_id, params.clone())
+                    .thread_realtime_text(thread_id, params.text.clone())
                     .await?;
                 Ok(true)
             }
@@ -748,7 +787,7 @@ impl App {
                     .turn_context_update(codex_app_server_protocol::TurnContextUpdateParams {
                         thread_id: thread_id.to_string(),
                         cwd: (*cwd).clone(),
-                        approval_policy: (*approval_policy).map(Into::into),
+                        approval_policy: (*approval_policy),
                         approvals_reviewer: (*approvals_reviewer).map(Into::into),
                         sandbox_policy: (*sandbox_policy).clone().map(Into::into),
                         permission_profile: (*permission_profile).clone().map(Into::into),
@@ -1062,7 +1101,7 @@ impl App {
     pub(super) async fn enqueue_thread_history_entry_response(
         &mut self,
         thread_id: ThreadId,
-        event: GetHistoryEntryResponseEvent,
+        event: HistoryLookupResponse,
     ) -> Result<()> {
         let (sender, store) = {
             let channel = self.ensure_thread_channel(thread_id);
@@ -1393,7 +1432,6 @@ impl App {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn handle_skills_list_response(&mut self, response: SkillsListResponse) {
-        let response = list_skills_response_to_core(response);
         let cwd = self.chat_widget.config_ref().cwd.clone();
         let errors = errors_for_cwd(&cwd, &response);
         emit_skill_load_warnings(&self.app_event_tx, &errors);
