@@ -69,17 +69,22 @@
               rust
               pkgs.pkg-config
               pkgs.openssl
+              pkgs.zlib
               pkgs.libcap
               pkgs.cmake
               pkgs.llvmPackages.clang
               pkgs.llvmPackages.libclang.lib
             ];
-            PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+            PKG_CONFIG_PATH = pkgs.lib.makeSearchPathOutput "dev" "lib/pkgconfig" [
+              pkgs.openssl
+              pkgs.zlib
+              pkgs.libcap
+            ];
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             # Use clang for BoringSSL compilation (avoids GCC 15 warnings-as-errors)
             shellHook = ''
-              export CC=clang
-              export CXX=clang++
+              export CC=${pkgs.llvmPackages.clang}/bin/clang
+              export CXX=${pkgs.llvmPackages.clang}/bin/clang++
             '';
           };
         }

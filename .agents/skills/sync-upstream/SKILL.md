@@ -79,18 +79,30 @@ Produce or execute a fork refresh for this repo with:
 
 ### 4. Verify Each Mod Before Continuing
 
-- For the sync workflow and MCP approval patch in `codex-rs/core`:
-  - run the smallest targeted `codex-core` test coverage for `mcp_tool_call`
+- For sync workflow or local build changes:
+  - run `make sync-checklist`
+  - run `make -n sync-main`
+  - run `make -n rebase-custom`
+  - run `make -n sync`
+  - run `bash -n custom/run-tests.sh` when the full-test wrapper changes
+- For the MCP approval patch in `codex-rs/core`:
+  - run `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core --lib mcp_tool_call'`
 - For Claude project doc fallbacks in `codex-rs/core`:
-  - run the smallest targeted `codex-core` test coverage for `agents_md`
+  - run `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core --lib agents_md'`
 - For repo `.claude/skills` fallback in `codex-rs/core-skills`:
-  - run targeted `codex-core-skills` loader coverage
+  - run `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core-skills --lib loader'`
 - For the danger-mode TUI mod in `codex-rs/tui`:
   - run `cargo test -p codex-tui` from the `nix develop` shell path described in `AGENTS.md`
   - review and accept intended snapshot updates if the UI changed
   - then run `just fmt`
   - then run `just fix -p codex-tui`
 - For other Rust edits, follow the crate-specific verification rules in repo-root `AGENTS.md`.
+- Prefer exact crate targets for targeted verification. Broad filters such as `cargo test -p codex-core mcp_tool_call` can also run integration tests that require helper binaries such as `test_stdio_server`; use `--lib` unless integration coverage is intentional.
+- If a sync introduces or exposes Rust/native dependency changes, validate the Nix layer before calling the shell healthy:
+  - run `nix flake check --no-build`
+  - run `nix build .#codex-rs.cargoDeps --no-link`
+  - when native build scripts fail, check `pkg-config --modversion <dep>`, `CC`, and `CXX` inside `nix develop` before changing Rust tests or assertions.
+- Treat long TUI and Clippy commands as long-running work. If the tool path times out, rerun through a long-lived shell or PTY-capable execution path, and wait through Cargo artifact/build locks instead of starting competing Cargo commands.
 - Ask before running a full workspace validation sweep.
 - When the user wants the full sweep, run the repo-root wrapper:
   - `./custom/run-tests.sh`
@@ -124,6 +136,8 @@ Keep the write-up concise, but do not skip:
 - Runtime permission plumbing now has two layers: stored config defaults and active-turn runtime permissions. When adapting approval-review tests or `turn/contextUpdate`, update both layers when the test expects effective runtime behavior to change.
 - If app-server warning tests report an unexpected omitted-skill count, suspect host skill discovery before changing assertions. The test process can see `$HOME/.agents/skills` unless the full-test wrapper isolates `HOME`.
 - If shell snapshot runtime tests fail under raw `cargo test` with missing `/bin/bash`, do not patch the tests first; rerun through `./custom/run-tests.sh`/`just test` because the supported path is nextest in the Nix shell.
+- If targeted Rust verification fails before tests run, distinguish source regressions from Nix/native dependency drift. Missing `*.pc` files, missing cargo output hashes, and compiler lookup failures belong in the Nix layer.
+- If a build script reports a bare compiler like `clang` as missing even though the shell has clang on `PATH`, prefer absolute compiler paths from Nix for `CC`/`CXX` before changing Rust code.
 
 ## Common Pitfalls
 
@@ -142,7 +156,9 @@ Keep the write-up concise, but do not skip:
 - [ ] `make sync` used instead of a custom sync sequence
 - [ ] Each mod handled in chronological order with `retain/port`, `retire`, or `blocked`
 - [ ] Any retirement decision paused for user confirmation
-- [ ] Targeted verification run for each touched mod
+- [ ] Exact targeted verification run for each touched mod, using `--lib` for crate unit coverage where applicable
+- [ ] Nix eval and cargo dependency vendoring checked when upstream changed Rust/native dependencies
+- [ ] Long-running TUI and Clippy commands completed instead of being treated as failed on timeout
 - [ ] Full validation, when requested, run via `./custom/run-tests.sh`
 - [ ] Repo-root `CUSTOM_MODS.md` updated if behavior ownership or verification changed
 - [ ] Repo-root `AGENTS.md` updated if the fork maintenance map changed

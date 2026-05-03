@@ -2,6 +2,7 @@
   cmake,
   llvmPackages,
   openssl,
+  zlib,
   libcap ? null,
   rustPlatform,
   pkg-config,
@@ -12,8 +13,10 @@
 }:
 rustPlatform.buildRustPackage (_: {
   env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" (
-    [ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]
+    [ openssl zlib ] ++ lib.optionals stdenv.isLinux [ libcap ]
   );
+  env.CC = "${llvmPackages.clang}/bin/clang";
+  env.CXX = "${llvmPackages.clang}/bin/clang++";
   pname = "codex-rs";
   inherit version;
   cargoLock.lockFile = ./Cargo.lock;
@@ -33,6 +36,7 @@ rustPlatform.buildRustPackage (_: {
     llvmPackages.libclang.lib
     openssl
     pkg-config
+    zlib
   ] ++ lib.optionals stdenv.isLinux [
     libcap
   ];
@@ -40,6 +44,7 @@ rustPlatform.buildRustPackage (_: {
   cargoLock.outputHashes = {
     "ratatui-0.29.0" = "sha256-HBvT5c8GsiCxMffNjJGLmHnvG77A6cqEL+1ARurBXho=";
     "crossterm-0.28.1" = "sha256-6qCtfSMuXACKFb9ATID39XyFDIEMFDmbx6SSmNe+728=";
+    "libwebrtc-0.3.26" = "sha256-0HPuwaGcqpuG+Pp6z79bCuDu/DyE858VZSYr3DKZD9o=";
     "nucleo-0.5.0" = "sha256-Hm4SxtTSBrcWpXrtSqeO0TACbUxq3gizg1zD/6Yw/sI=";
     "nucleo-matcher-0.3.1" = "sha256-Hm4SxtTSBrcWpXrtSqeO0TACbUxq3gizg1zD/6Yw/sI=";
     "runfiles-0.1.0" = "sha256-uJpVLcQh8wWZA3GPv9D8Nt43EOirajfDJ7eq/FB+tek=";
