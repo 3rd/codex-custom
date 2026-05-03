@@ -502,8 +502,16 @@ impl CoreShellActionProvider {
                 EscalationDecision::deny(Some("Execution forbidden by policy".to_string()))
             }
             Decision::Prompt => {
-                if execve_prompt_is_rejected_by_policy(self.approval_policy, &decision_source)
-                    .is_some()
+                if self
+                    .permission_profile
+                    .bypasses_approval_prompts(self.approval_policy)
+                {
+                    EscalationDecision::run()
+                } else if execve_prompt_is_rejected_by_policy(
+                    self.approval_policy,
+                    &decision_source,
+                )
+                .is_some()
                 {
                     EscalationDecision::deny(Some("Execution forbidden by policy".to_string()))
                 } else {

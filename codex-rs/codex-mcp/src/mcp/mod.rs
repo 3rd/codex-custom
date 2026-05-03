@@ -74,16 +74,7 @@ pub fn mcp_permission_prompt_is_auto_approved(
         return true;
     }
 
-    if approval_policy != AskForApproval::Never {
-        return false;
-    }
-
-    match permission_profile {
-        PermissionProfile::Disabled | PermissionProfile::External { .. } => true,
-        PermissionProfile::Managed { file_system, .. } => {
-            file_system.to_sandbox_policy().has_full_disk_write_access()
-        }
-    }
+    permission_profile.bypasses_approval_prompts(approval_policy)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -91,6 +91,13 @@ pub(crate) struct RuntimeTurnPermissionsSnapshot {
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
 }
 
+impl RuntimeTurnPermissionsSnapshot {
+    pub(crate) fn bypasses_approval_prompts(&self) -> bool {
+        self.permission_profile
+            .bypasses_approval_prompts(self.approval_policy)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct RuntimeTurnPermissionsHandle {
     snapshot: Arc<RwLock<RuntimeTurnPermissionsSnapshot>>,
@@ -366,10 +373,7 @@ impl TurnState {
 
         let pending_approvals = std::mem::take(&mut self.pending_approvals);
         for (key, request) in pending_approvals {
-            let decision = if matches!(
-                runtime_permissions.sandbox_policy,
-                SandboxPolicy::DangerFullAccess
-            ) {
+            let decision = if runtime_permissions.bypasses_approval_prompts() {
                 Some(ReviewDecision::Approved)
             } else {
                 match runtime_permissions.approval_policy {
@@ -401,23 +405,33 @@ impl TurnState {
 
         let pending_request_permissions = std::mem::take(&mut self.pending_request_permissions);
         for (key, request) in pending_request_permissions {
-            let response = match runtime_permissions.approval_policy {
-                AskForApproval::Never => Some(RequestPermissionsResponse {
-                    permissions: RequestPermissionProfile::default(),
+            let response = if runtime_permissions.bypasses_approval_prompts() {
+                Some(RequestPermissionsResponse {
+                    permissions: request.requested_permissions.clone(),
                     scope: PermissionGrantScope::Turn,
                     strict_auto_review: false,
-                }),
-                AskForApproval::Granular(granular) if !granular.allows_request_permissions() => {
-                    Some(RequestPermissionsResponse {
+                })
+            } else {
+                match runtime_permissions.approval_policy {
+                    AskForApproval::Never => Some(RequestPermissionsResponse {
                         permissions: RequestPermissionProfile::default(),
                         scope: PermissionGrantScope::Turn,
                         strict_auto_review: false,
-                    })
+                    }),
+                    AskForApproval::Granular(granular)
+                        if !granular.allows_request_permissions() =>
+                    {
+                        Some(RequestPermissionsResponse {
+                            permissions: RequestPermissionProfile::default(),
+                            scope: PermissionGrantScope::Turn,
+                            strict_auto_review: false,
+                        })
+                    }
+                    AskForApproval::UnlessTrusted
+                    | AskForApproval::OnFailure
+                    | AskForApproval::OnRequest
+                    | AskForApproval::Granular(_) => None,
                 }
-                AskForApproval::UnlessTrusted
-                | AskForApproval::OnFailure
-                | AskForApproval::OnRequest
-                | AskForApproval::Granular(_) => None,
             };
 
             match response {

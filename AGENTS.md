@@ -20,7 +20,7 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 - Current fork-only behavior lives in `codex-rs/core/src/mcp_tool_call.rs`:
   - Non-`codex_apps` MCP tools in `approval_mode = "auto"` skip the default approval prompt when tool annotations are missing, or when all three approval hints (`destructive_hint`, `read_only_hint`, `open_world_hint`) are unset.
   - This patch exists to keep custom/local MCP servers usable even when they do not emit full tool annotations.
-  - If approval flow is still reached while `AskForApproval::Never` is active, the code now declines instead of trying to continue toward a prompt path.
+  - Danger/full-access mode auto-approves MCP approval prompts unless the tool is explicitly disabled or denied by config.
 - Current fork-only shell approval normalization lives in:
   - `codex-rs/shell-command/src/bash.rs`
   - `codex-rs/shell-command/src/command_safety/is_safe_command.rs`
@@ -47,6 +47,15 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
   - `codex-rs/tui/src/chatwidget/interrupts.rs`
   - `turn/contextUpdate` updates the active turn and subsequent defaults without new user input, and re-evaluates pending interactive requests when runtime permissions change.
   - When adapting tests around runtime permission changes, keep the `Config` defaults and `TurnContext` runtime permissions aligned. Current upstream uses effective runtime permissions for approval-review routing, so updating only `config.approvals_reviewer` is not enough.
+- Current fork-only danger/full-access approval behavior lives in:
+  - `codex-rs/protocol/src/models.rs`
+  - `codex-rs/core/src/exec_policy.rs`
+  - `codex-rs/core/src/state/turn.rs`
+  - `codex-rs/core/src/session/mod.rs`
+  - `codex-rs/core/src/codex_delegate.rs`
+  - `codex-rs/core/src/tools/runtimes`
+  - `codex-rs/codex-mcp/src/mcp/mod.rs`
+  - Danger mode bypasses shell, patch, MCP, request-permissions, guardian/auto-review, and delegated subagent approval prompts. Explicit configured denies remain hard blocks, including exec-policy forbidden rules, disabled MCP tools, denied network domains, and filesystem `none` entries or patterns.
 - Regression coverage for the fork patch lives in `codex-rs/core/src/mcp_tool_call_tests.rs`. If you touch this behavior, rerun focused `codex-core` tests before doing anything broader.
 - Regression coverage for the `rtk` shell approval mod lives in:
   - `codex-rs/shell-command/src/bash.rs`

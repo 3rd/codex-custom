@@ -23,6 +23,7 @@ use crate::review_format::render_review_output_text;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::state::TaskKind;
+use crate::tools::handlers::multi_agents_common::apply_spawn_agent_runtime_overrides;
 use codex_features::Feature;
 use codex_protocol::user_input::UserInput;
 use std::sync::LazyLock;
@@ -99,6 +100,9 @@ async fn start_review_conversation(
 ) -> Option<async_channel::Receiver<Event>> {
     let config = ctx.config.clone();
     let mut sub_agent_config = config.as_ref().clone();
+    if apply_spawn_agent_runtime_overrides(&mut sub_agent_config, ctx.as_ref()).is_err() {
+        return None;
+    }
     // Carry over review-only feature restrictions so the delegate cannot
     // re-enable blocked tools (web search, collab tools, view image).
     if let Err(err) = sub_agent_config

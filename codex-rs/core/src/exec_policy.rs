@@ -334,6 +334,13 @@ impl ExecPolicyManager {
                 reason: derive_forbidden_reason(command, &evaluation),
             },
             Decision::Prompt => {
+                if permission_profile.bypasses_approval_prompts(approval_policy) {
+                    return ExecApprovalRequirement::Skip {
+                        bypass_sandbox: false,
+                        proposed_execpolicy_amendment: None,
+                    };
+                }
+
                 let prompt_is_rule = evaluation.matched_rules.iter().any(|rule_match| {
                     is_policy_match(rule_match) && rule_match.decision() == Decision::Prompt
                 });
@@ -356,20 +363,21 @@ impl ExecPolicyManager {
                 }
             }
             Decision::Allow => ExecApprovalRequirement::Skip {
-                // Bypass sandbox only when every parsed command segment is
-                // explicitly allowed by execpolicy.
-                bypass_sandbox: commands.iter().all(|command| {
-                    exec_policy
-                        .matches_for_command_with_options(
-                            command,
-                            /*heuristics_fallback*/ None,
-                            &match_options,
-                        )
-                        .iter()
-                        .any(|rule_match| {
-                            is_policy_match(rule_match) && rule_match.decision() == Decision::Allow
-                        })
-                }),
+                // Bypass sandbox only for explicit allow rules outside danger mode.
+                bypass_sandbox: !permission_profile.bypasses_approval_prompts(approval_policy)
+                    && commands.iter().all(|command| {
+                        exec_policy
+                            .matches_for_command_with_options(
+                                command,
+                                /*heuristics_fallback*/ None,
+                                &match_options,
+                            )
+                            .iter()
+                            .any(|rule_match| {
+                                is_policy_match(rule_match)
+                                    && rule_match.decision() == Decision::Allow
+                            })
+                    }),
                 proposed_execpolicy_amendment: if auto_amendment_allowed {
                     try_derive_execpolicy_amendment_for_allow_rules(&evaluation.matched_rules)
                 } else {
@@ -663,12 +671,8 @@ pub(crate) fn render_decision_for_unmatched_command(
             sandbox_cwd,
         );
 
-    // If the command is flagged as dangerous or we have no sandbox protection,
-    // we should never allow it to run without approval.
-    //
-    // We prefer to prompt the user rather than outright forbid the command,
-    // but if the user has explicitly disabled prompts, we must
-    // forbid the command.
+    // Dangerous commands prompt unless full-access permissions make prompts a
+    // no-op; if prompts are disabled without full access, fail closed.
     let command_is_dangerous = match command_origin {
         ExecPolicyCommandOrigin::Generic => command_might_be_dangerous(command),
         #[cfg(windows)]
@@ -679,12 +683,7 @@ pub(crate) fn render_decision_for_unmatched_command(
     if command_is_dangerous || environment_lacks_sandbox_protections {
         return match approval_policy {
             AskForApproval::Never => {
-                let sandbox_is_explicitly_disabled = matches!(
-                    permission_profile,
-                    PermissionProfile::Disabled | PermissionProfile::External { .. }
-                );
-                if sandbox_is_explicitly_disabled {
-                    // If the sandbox is explicitly disabled, we should allow the command to run
+                if permission_profile.bypasses_approval_prompts(approval_policy) {
                     Decision::Allow
                 } else {
                     Decision::Forbidden

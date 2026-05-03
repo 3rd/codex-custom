@@ -2150,6 +2150,18 @@ impl Session {
         cwd: AbsolutePathBuf,
         cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
+        let requested_permissions = args.permissions;
+        if turn_context
+            .runtime_permissions()
+            .bypasses_approval_prompts()
+        {
+            return Some(RequestPermissionsResponse {
+                permissions: requested_permissions,
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            });
+        }
+
         match turn_context.as_ref().approval_policy.value() {
             AskForApproval::Never => {
                 return Some(RequestPermissionsResponse {
@@ -2172,8 +2184,6 @@ impl Session {
             | AskForApproval::UnlessTrusted
             | AskForApproval::Granular(_) => {}
         }
-
-        let requested_permissions = args.permissions;
 
         if crate::guardian::routes_approval_to_guardian(turn_context.as_ref()) {
             let originating_turn_state = {

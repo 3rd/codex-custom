@@ -16,6 +16,7 @@ use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
@@ -1168,8 +1169,9 @@ async fn exec_approval_requirement_respects_approval_policy() {
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
         },
-        ExecApprovalRequirement::Forbidden {
-            reason: PROMPT_CONFLICT_REASON.to_string(),
+        ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: None,
         },
     )
     .await;
@@ -2173,11 +2175,55 @@ async fn dangerous_command_allowed_when_sandbox_is_explicitly_disabled() {
 }
 
 #[tokio::test]
-async fn dangerous_command_forbidden_in_external_sandbox_when_policy_matches() {
+async fn allow_rules_do_not_bypass_sandbox_in_danger_mode() {
+    let command = vec_str(&["cat", ".env"]);
+    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Special {
+                value: FileSystemSpecialPath::Root,
+            },
+            access: FileSystemAccessMode::Write,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::GlobPattern {
+                pattern: "**/.env".to_string(),
+            },
+            access: FileSystemAccessMode::None,
+        },
+    ]);
+    let permission_profile = PermissionProfile::from_runtime_permissions_with_enforcement(
+        SandboxEnforcement::Managed,
+        &file_system_sandbox_policy,
+        NetworkSandboxPolicy::Restricted,
+    );
+    let policy = policy_from_src(Some(r#"prefix_rule(pattern=["cat"], decision="allow")"#));
+    let requirement = ExecPolicyManager::new(policy)
+        .create_exec_approval_requirement_for_command(ExecApprovalRequest {
+            command: &command,
+            approval_policy: AskForApproval::Never,
+            permission_profile,
+            file_system_sandbox_policy: &file_system_sandbox_policy,
+            sandbox_cwd: Path::new("/tmp"),
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        })
+        .await;
+
+    assert_eq!(
+        requirement,
+        ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: None,
+        }
+    );
+}
+
+#[tokio::test]
+async fn dangerous_command_forbidden_in_external_sandbox_when_forbidden_policy_matches() {
     let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
     assert_exec_approval_requirement_for_command(
         ExecApprovalRequirementScenario {
-            policy_src: Some("prefix_rule(pattern=['rm'], decision='prompt')".to_string()),
+            policy_src: Some("prefix_rule(pattern=['rm'], decision='forbidden')".to_string()),
             command,
             approval_policy: AskForApproval::Never,
             sandbox_policy: SandboxPolicy::ExternalSandbox {
@@ -2188,7 +2234,9 @@ async fn dangerous_command_forbidden_in_external_sandbox_when_policy_matches() {
             prefix_rule: None,
         },
         ExecApprovalRequirement::Forbidden {
-            reason: "approval required by policy, but AskForApproval is set to Never".to_string(),
+            reason:
+                "`rm -rf /tmp/nonexistent` rejected: policy forbids commands starting with `rm`"
+                    .to_string(),
         },
     )
     .await;

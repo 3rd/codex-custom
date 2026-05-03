@@ -449,7 +449,9 @@ async fn handle_exec_approval(
         available_decisions,
         ..
     } = event;
-    let decision = if routes_approval_to_guardian(parent_ctx) {
+    let decision = if parent_ctx.runtime_permissions().bypasses_approval_prompts() {
+        ReviewDecision::Approved
+    } else if routes_approval_to_guardian(parent_ctx) {
         let review_cancel = cancel_token.child_token();
         let review_rx = spawn_approval_request_review(
             Arc::clone(parent_session),
@@ -527,7 +529,9 @@ async fn handle_patch_approval(
         ..
     } = event;
     let approval_id = call_id.clone();
-    let guardian_decision = if routes_approval_to_guardian(parent_ctx) {
+    let guardian_decision = if parent_ctx.runtime_permissions().bypasses_approval_prompts() {
+        Some(ReviewDecision::Approved)
+    } else if routes_approval_to_guardian(parent_ctx) {
         let files = changes
             .keys()
             .map(|path| parent_ctx.cwd.join(path))
@@ -619,6 +623,13 @@ async fn handle_request_user_input(
     event: RequestUserInputEvent,
     cancel_token: &CancellationToken,
 ) {
+    if parent_ctx.runtime_permissions().bypasses_approval_prompts()
+        && let Some(response) = mcp_request_user_input_accept_response(&event)
+    {
+        let _ = codex.submit(Op::UserInputAnswer { id, response }).await;
+        return;
+    }
+
     if routes_approval_to_guardian(parent_ctx)
         && let Some(response) = maybe_auto_review_mcp_request_user_input(
             parent_session,
@@ -717,6 +728,33 @@ async fn maybe_auto_review_mcp_request_user_input(
             MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC.to_string()
         }
     };
+    Some(RequestUserInputResponse {
+        answers: HashMap::from([(
+            question.id.clone(),
+            codex_protocol::request_user_input::RequestUserInputAnswer {
+                answers: vec![selected_label],
+            },
+        )]),
+    })
+}
+
+fn mcp_request_user_input_accept_response(
+    event: &RequestUserInputEvent,
+) -> Option<RequestUserInputResponse> {
+    let question = event
+        .questions
+        .iter()
+        .find(|question| is_mcp_tool_approval_question_id(&question.id))?;
+    let selected_label = question
+        .options
+        .as_ref()
+        .and_then(|options| {
+            options
+                .iter()
+                .find(|option| option.label == MCP_TOOL_APPROVAL_ACCEPT)
+        })
+        .map(|option| option.label.clone())
+        .unwrap_or_else(|| MCP_TOOL_APPROVAL_ACCEPT.to_string());
     Some(RequestUserInputResponse {
         answers: HashMap::from([(
             question.id.clone(),

@@ -7,6 +7,10 @@ use codex_plugin::AppConnectorId;
 use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::permissions::FileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxEntry;
+use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GranularApprovalConfig;
@@ -54,6 +58,30 @@ fn mcp_prompt_auto_approval_honors_unrestricted_managed_profiles() {
         AskForApproval::Never,
         &PermissionProfile::Managed {
             file_system: ManagedFileSystemPermissions::Unrestricted,
+            network: NetworkSandboxPolicy::Restricted,
+        },
+        McpPermissionPromptAutoApproveContext::default(),
+    ));
+    assert!(mcp_permission_prompt_is_auto_approved(
+        AskForApproval::Never,
+        &PermissionProfile::Managed {
+            file_system: ManagedFileSystemPermissions::Restricted {
+                entries: vec![
+                    FileSystemSandboxEntry {
+                        path: FileSystemPath::Special {
+                            value: FileSystemSpecialPath::Root,
+                        },
+                        access: FileSystemAccessMode::Write,
+                    },
+                    FileSystemSandboxEntry {
+                        path: FileSystemPath::GlobPattern {
+                            pattern: "**/.env".to_string(),
+                        },
+                        access: FileSystemAccessMode::None,
+                    },
+                ],
+                glob_scan_max_depth: None,
+            },
             network: NetworkSandboxPolicy::Restricted,
         },
         McpPermissionPromptAutoApproveContext::default(),

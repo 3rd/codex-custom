@@ -18,9 +18,9 @@ Before adapting a mod, read the matching entry, inspect current upstream ownersh
 
 - Mod ID: `mcp-approval-compat`
 - Current commits: `4876328d1`
-- Behavior contract: non-`codex_apps` MCP tools in auto approval mode skip the default prompt when tool annotations are missing or all approval hints are unset; if approval is still reached while approvals are never allowed, decline instead of prompting.
-- Owner areas: `codex-rs/core/src/mcp_tool_call.rs`
-- Targeted checks: `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core mcp_tool_call'`
+- Behavior contract: non-`codex_apps` MCP tools in auto approval mode skip the default prompt when tool annotations are missing or all approval hints are unset. In danger/full-access mode, MCP approval prompts auto-approve unless the tool is explicitly disabled or denied by config.
+- Owner areas: `codex-rs/core/src/mcp_tool_call.rs`, `codex-rs/codex-mcp/src/mcp/mod.rs`
+- Targeted checks: `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core mcp_tool_call'`, `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-mcp mcp_prompt_auto_approval'`
 - Adaptation notes: preserve compatibility with local MCP servers that do not emit full annotations. Re-check upstream MCP approval semantics before replaying old code.
 - Retirement criteria: upstream implements equivalent behavior for unannotated local MCP tools.
 
@@ -28,10 +28,10 @@ Before adapting a mod, read the matching entry, inspect current upstream ownersh
 
 - Mod ID: `danger-mode-tui`
 - Current commits: `be9e77869`
-- Behavior contract: the TUI exposes and reflects the local danger-mode permission state consistently between runtime behavior and visible UI.
-- Owner areas: `codex-rs/tui/src`
-- Targeted checks: `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`, snapshot review if UI output changes
-- Adaptation notes: treat state, rendering, tests, and snapshots as one bundle. Prefer TUI-local ownership unless the current upstream architecture requires a cross-process concept.
+- Behavior contract: danger mode means every approval path is bypassed, including shell, patch, MCP, request-permissions, guardian/auto-review, and delegated subagent approvals. Only explicit configured deny rules remain hard blocks, including exec-policy forbidden rules, disabled MCP tools, denied network domains, and filesystem `none` deny entries/patterns.
+- Owner areas: `codex-rs/protocol/src/models.rs`, `codex-rs/core/src/exec_policy.rs`, `codex-rs/core/src/state/turn.rs`, `codex-rs/core/src/session/mod.rs`, `codex-rs/core/src/codex_delegate.rs`, `codex-rs/core/src/tools/runtimes`, `codex-rs/tui/src`
+- Targeted checks: `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core exec_policy'`, `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core mcp_tool_call'`, `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-tui'`, snapshot review if UI output changes
+- Adaptation notes: treat state, rendering, tests, snapshots, and subagent/runtime permission inheritance as one bundle. Keep `Config` defaults and `TurnContext` runtime permissions aligned, and preserve explicit deny enforcement before bypassing approval prompts.
 - Retirement criteria: upstream exposes equivalent permission behavior and visible state.
 
 ## Claude Project Doc Fallback

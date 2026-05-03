@@ -18,6 +18,7 @@ use crate::permissions::FileSystemSandboxKind;
 use crate::permissions::FileSystemSandboxPolicy;
 use crate::permissions::FileSystemSpecialPath;
 use crate::permissions::NetworkSandboxPolicy;
+use crate::protocol::AskForApproval;
 use crate::protocol::SandboxPolicy;
 use crate::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -295,6 +296,16 @@ impl ManagedFileSystemPermissions {
             Self::Unrestricted => FileSystemSandboxPolicy::unrestricted(),
         }
     }
+
+    fn grants_full_write_by_default(&self) -> bool {
+        match self {
+            Self::Unrestricted => true,
+            Self::Restricted { .. } => self
+                .to_sandbox_policy()
+                .resolve_access_with_cwd(Path::new("/"), Path::new("/"))
+                .can_write(),
+        }
+    }
 }
 
 /// Canonical active runtime permissions for a conversation, turn, or command.
@@ -511,6 +522,17 @@ impl PermissionProfile {
         match self {
             Self::Managed { network, .. } | Self::External { network } => *network,
             Self::Disabled => NetworkSandboxPolicy::Enabled,
+        }
+    }
+
+    pub fn bypasses_approval_prompts(&self, approval_policy: AskForApproval) -> bool {
+        if approval_policy != AskForApproval::Never {
+            return false;
+        }
+
+        match self {
+            Self::Disabled | Self::External { .. } => true,
+            Self::Managed { file_system, .. } => file_system.grants_full_write_by_default(),
         }
     }
 
