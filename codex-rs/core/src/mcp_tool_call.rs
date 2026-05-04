@@ -10,8 +10,6 @@ use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use tracing::error;
 
-use crate::arc_monitor::ArcMonitorOutcome;
-use crate::arc_monitor::monitor_action;
 use crate::config::Config;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
@@ -19,7 +17,6 @@ use crate::config::load_global_mcp_servers;
 use crate::connectors;
 use crate::guardian::GuardianApprovalRequest;
 use crate::guardian::GuardianMcpAnnotations;
-use crate::guardian::guardian_approval_request_to_json;
 use crate::guardian::guardian_rejection_message;
 use crate::guardian::guardian_timeout_message;
 use crate::guardian::new_guardian_review_id;
@@ -256,18 +253,6 @@ pub(crate) async fn handle_mcp_tool_call(
             }
             McpToolApprovalDecision::Cancel => {
                 let message = "user cancelled MCP tool call".to_string();
-                notify_mcp_tool_call_skip(
-                    sess.as_ref(),
-                    turn_context.as_ref(),
-                    &call_id,
-                    invocation,
-                    mcp_app_resource_uri.clone(),
-                    message,
-                    /*already_started*/ true,
-                )
-                .await
-            }
-            McpToolApprovalDecision::BlockedBySafetyMonitor(message) => {
                 notify_mcp_tool_call_skip(
                     sess.as_ref(),
                     turn_context.as_ref(),
@@ -955,7 +940,6 @@ enum McpToolApprovalDecision {
     AcceptAndRemember,
     Decline { message: Option<String> },
     Cancel,
-    BlockedBySafetyMonitor(String),
 }
 
 pub(crate) struct McpToolApprovalMetadata {
@@ -1111,6 +1095,20 @@ pub(crate) const MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION: &str = "Allow for this se
 pub(crate) const MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC: &str = "__codex_mcp_decline__";
 const MCP_TOOL_APPROVAL_ACCEPT_AND_REMEMBER: &str = "Allow and don't ask me again";
 const MCP_TOOL_APPROVAL_CANCEL: &str = "Cancel";
+const MCP_TOOL_APPROVAL_KIND_KEY: &str = "codex_approval_kind";
+const MCP_TOOL_APPROVAL_KIND_MCP_TOOL_CALL: &str = "mcp_tool_call";
+const MCP_TOOL_APPROVAL_PERSIST_KEY: &str = "persist";
+const MCP_TOOL_APPROVAL_PERSIST_SESSION: &str = "session";
+const MCP_TOOL_APPROVAL_PERSIST_ALWAYS: &str = "always";
+const MCP_TOOL_APPROVAL_SOURCE_KEY: &str = "source";
+const MCP_TOOL_APPROVAL_SOURCE_CONNECTOR: &str = "connector";
+const MCP_TOOL_APPROVAL_CONNECTOR_ID_KEY: &str = "connector_id";
+const MCP_TOOL_APPROVAL_CONNECTOR_NAME_KEY: &str = "connector_name";
+const MCP_TOOL_APPROVAL_CONNECTOR_DESCRIPTION_KEY: &str = "connector_description";
+const MCP_TOOL_APPROVAL_TOOL_TITLE_KEY: &str = "tool_title";
+const MCP_TOOL_APPROVAL_TOOL_DESCRIPTION_KEY: &str = "tool_description";
+const MCP_TOOL_APPROVAL_TOOL_PARAMS_KEY: &str = "tool_params";
+const MCP_TOOL_APPROVAL_TOOL_PARAMS_DISPLAY_KEY: &str = "tool_params_display";
 const MCP_TOOL_CALL_ARC_MONITOR_CALLSITE_DEFAULT: &str = "mcp_tool_call__default";
 const MCP_TOOL_CALL_ARC_MONITOR_CALLSITE_ALWAYS_ALLOW: &str = "mcp_tool_call__always_allow";
 
@@ -1157,6 +1155,10 @@ async fn maybe_request_mcp_tool_approval(
         return None;
     }
 
+    if approval_mode == AppToolApproval::Approve {
+        return None;
+    }
+
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
     let skip_default_custom_approval =
         should_skip_default_custom_mcp_approval(invocation, approval_mode, annotations);
@@ -1165,30 +1167,7 @@ async fn maybe_request_mcp_tool_approval(
         return None;
     }
 
-    let mut monitor_reason = None;
-    let auto_approved_by_policy = approval_mode == AppToolApproval::Approve;
-
-    if auto_approved_by_policy {
-        match maybe_monitor_auto_approved_mcp_tool_call(
-            sess,
-            turn_context,
-            invocation,
-            metadata,
-            approval_mode,
-        )
-        .await
-        {
-            ArcMonitorOutcome::Ok => return None,
-            ArcMonitorOutcome::AskUser(reason) => {
-                monitor_reason = Some(reason);
-            }
-            ArcMonitorOutcome::SteerModel(reason) => {
-                return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(
-                    arc_monitor_interrupt_message(&reason),
-                ));
-            }
-        }
-    }
+    let monitor_reason = None;
 
     if matches!(runtime_permissions.approval_policy, AskForApproval::Never)
         && !skip_default_custom_approval
@@ -1352,23 +1331,6 @@ async fn maybe_request_mcp_tool_approval(
     Some(decision)
 }
 
-async fn maybe_monitor_auto_approved_mcp_tool_call(
-    sess: &Session,
-    turn_context: &TurnContext,
-    invocation: &McpInvocation,
-    metadata: Option<&McpToolApprovalMetadata>,
-    approval_mode: AppToolApproval,
-) -> ArcMonitorOutcome {
-    let action = prepare_arc_request_action(invocation, metadata);
-    monitor_action(
-        sess,
-        turn_context,
-        action,
-        mcp_tool_approval_callsite_mode(approval_mode, turn_context),
-    )
-    .await
-}
-
 fn should_skip_default_custom_mcp_approval(
     invocation: &McpInvocation,
     approval_mode: AppToolApproval,
@@ -1381,20 +1343,6 @@ fn should_skip_default_custom_mcp_approval(
                 && annotations.read_only_hint.is_none()
                 && annotations.open_world_hint.is_none()
         })
-}
-
-fn prepare_arc_request_action(
-    invocation: &McpInvocation,
-    metadata: Option<&McpToolApprovalMetadata>,
-) -> serde_json::Value {
-    let request = build_guardian_mcp_tool_review_request("arc-monitor", invocation, metadata);
-    match guardian_approval_request_to_json(&request) {
-        Ok(action) => action,
-        Err(error) => {
-            error!(error = %error, "failed to serialize guardian MCP approval request for ARC");
-            serde_json::Value::Null
-        }
-    }
 }
 
 fn session_mcp_tool_approval_key(
@@ -1468,18 +1416,6 @@ async fn mcp_tool_approval_decision_from_guardian(
             message: Some(guardian_timeout_message()),
         },
         ReviewDecision::Abort => McpToolApprovalDecision::Decline { message: None },
-    }
-}
-
-fn mcp_tool_approval_callsite_mode(
-    approval_mode: AppToolApproval,
-    _turn_context: &TurnContext,
-) -> &'static str {
-    match approval_mode {
-        AppToolApproval::Approve => MCP_TOOL_CALL_ARC_MONITOR_CALLSITE_ALWAYS_ALLOW,
-        AppToolApproval::Auto | AppToolApproval::Prompt => {
-            MCP_TOOL_CALL_ARC_MONITOR_CALLSITE_DEFAULT
-        }
     }
 }
 
@@ -1679,15 +1615,6 @@ fn mcp_tool_approval_question_text(question: String, monitor_reason: Option<&str
             format!("Tool call needs your approval. Reason: {reason}")
         }
         _ => question,
-    }
-}
-
-fn arc_monitor_interrupt_message(reason: &str) -> String {
-    let reason = reason.trim();
-    if reason.is_empty() {
-        "Tool call was cancelled because of safety risks.".to_string()
-    } else {
-        format!("Tool call was cancelled because of safety risks: {reason}")
     }
 }
 
@@ -1992,8 +1919,7 @@ async fn apply_mcp_tool_approval_decision(
         }
         McpToolApprovalDecision::Accept
         | McpToolApprovalDecision::Decline { .. }
-        | McpToolApprovalDecision::Cancel
-        | McpToolApprovalDecision::BlockedBySafetyMonitor(_) => {}
+        | McpToolApprovalDecision::Cancel => {}
     }
 }
 

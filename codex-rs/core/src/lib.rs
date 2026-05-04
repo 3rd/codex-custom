@@ -7,6 +7,7 @@
 
 mod apply_patch;
 mod apps;
+#[cfg(test)]
 mod arc_monitor;
 mod client;
 mod client_common;

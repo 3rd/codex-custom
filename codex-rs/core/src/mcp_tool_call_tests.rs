@@ -1523,42 +1523,6 @@ fn guardian_mcp_review_request_includes_annotations_when_present() {
     );
 }
 
-#[test]
-fn prepare_arc_request_action_serializes_mcp_tool_call_shape() {
-    let invocation = McpInvocation {
-        server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
-        tool: "browser_navigate".to_string(),
-        arguments: Some(serde_json::json!({
-            "url": "https://example.com",
-        })),
-    };
-
-    let action = prepare_arc_request_action(
-        &invocation,
-        Some(&approval_metadata(
-            /*connector_id*/ None,
-            Some("Playwright"),
-            /*connector_description*/ None,
-            Some("Navigate"),
-            /*tool_description*/ None,
-        )),
-    );
-
-    assert_eq!(
-        action,
-        serde_json::json!({
-            "tool": "mcp_tool_call",
-            "server": CODEX_APPS_MCP_SERVER_NAME,
-            "tool_name": "browser_navigate",
-            "arguments": {
-                "url": "https://example.com",
-            },
-            "connector_name": "Playwright",
-            "tool_title": "Navigate",
-        })
-    );
-}
-
 #[tokio::test(flavor = "current_thread")]
 async fn guardian_review_decision_maps_to_mcp_tool_decision() {
     let (session, _) = make_session_and_context().await;
@@ -1690,24 +1654,6 @@ fn approval_elicitation_meta_merges_session_and_always_persist_with_connector_so
                 "calendar_id": "primary",
             },
         }))
-    );
-}
-
-#[tokio::test]
-async fn approval_callsite_mode_distinguishes_default_and_always_allow() {
-    let (_session, turn_context) = make_session_and_context().await;
-
-    assert_eq!(
-        mcp_tool_approval_callsite_mode(AppToolApproval::Auto, &turn_context),
-        "mcp_tool_call__default"
-    );
-    assert_eq!(
-        mcp_tool_approval_callsite_mode(AppToolApproval::Prompt, &turn_context),
-        "mcp_tool_call__default"
-    );
-    assert_eq!(
-        mcp_tool_approval_callsite_mode(AppToolApproval::Approve, &turn_context),
-        "mcp_tool_call__always_allow"
     );
 }
 
@@ -2738,7 +2684,7 @@ async fn custom_auto_mode_skips_approval_when_annotations_have_no_hints_in_on_re
 }
 
 #[tokio::test]
-async fn approve_mode_blocks_arc_interrupt_for_model() {
+async fn approve_mode_skips_arc_interrupt_for_codex_app_tool() {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -2759,7 +2705,7 @@ async fn approve_mode_blocks_arc_interrupt_for_model() {
                 "why": "high-risk action",
             }],
         })))
-        .expect(1)
+        .expect(0)
         .mount(&server)
         .await;
 
@@ -2801,14 +2747,11 @@ async fn approve_mode_blocks_arc_interrupt_for_model() {
     )
     .await;
 
-    let Some(McpToolApprovalDecision::BlockedBySafetyMonitor(message)) = decision else {
-        panic!("approve mode should block when ARC steers the model");
-    };
-    assert!(message.contains("high-risk action"));
+    assert_eq!(decision, None);
 }
 
 #[tokio::test]
-async fn custom_approve_mode_blocks_arc_interrupt_for_model() {
+async fn custom_approve_mode_skips_arc_interrupt_for_model() {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -2829,7 +2772,7 @@ async fn custom_approve_mode_blocks_arc_interrupt_for_model() {
                 "why": "high-risk action",
             }],
         })))
-        .expect(1)
+        .expect(0)
         .mount(&server)
         .await;
 
@@ -2871,14 +2814,11 @@ async fn custom_approve_mode_blocks_arc_interrupt_for_model() {
     )
     .await;
 
-    let Some(McpToolApprovalDecision::BlockedBySafetyMonitor(message)) = decision else {
-        panic!("custom approve mode should block when ARC steers the model");
-    };
-    assert!(message.contains("high-risk action"));
+    assert_eq!(decision, None);
 }
 
 #[tokio::test]
-async fn approve_mode_blocks_arc_interrupt_without_annotations() {
+async fn approve_mode_skips_arc_interrupt_without_annotations() {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -2899,7 +2839,7 @@ async fn approve_mode_blocks_arc_interrupt_without_annotations() {
                 "why": "high-risk action",
             }],
         })))
-        .expect(1)
+        .expect(0)
         .mount(&server)
         .await;
 
@@ -2941,10 +2881,7 @@ async fn approve_mode_blocks_arc_interrupt_without_annotations() {
     )
     .await;
 
-    let Some(McpToolApprovalDecision::BlockedBySafetyMonitor(message)) = decision else {
-        panic!("approve mode should block when ARC steers the model");
-    };
-    assert!(message.contains("high-risk action"));
+    assert_eq!(decision, None);
 }
 
 #[tokio::test]
@@ -3037,31 +2974,14 @@ async fn full_access_mode_skips_arc_monitor_for_all_approval_modes() {
 }
 
 #[tokio::test]
-async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_enabled() {
+async fn approve_mode_skips_guardian_when_guardian_reviewer_is_enabled() {
     use wiremock::Mock;
+    use wiremock::MockServer;
     use wiremock::ResponseTemplate;
     use wiremock::matchers::method;
     use wiremock::matchers::path;
 
-    let server = start_mock_server().await;
-    let guardian_request_log = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-guardian"),
-            ev_assistant_message(
-                "msg-guardian",
-                &serde_json::json!({
-                    "risk_level": "low",
-                    "user_authorization": "high",
-                    "outcome": "allow",
-                    "rationale": "The user already configured guardian to review escalated approvals for this session.",
-                })
-                .to_string(),
-            ),
-            ev_completed("resp-guardian"),
-        ]),
-    )
-    .await;
+    let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/codex/safety/arc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -3075,11 +2995,11 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
                 "why": "requires review",
             }],
         })))
-        .expect(1)
+        .expect(0)
         .mount(&server)
         .await;
 
-    let (mut session, mut turn_context) = make_session_and_context().await;
+    let (session, mut turn_context) = make_session_and_context().await;
     turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
         codex_login::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
     ));
@@ -3089,20 +3009,9 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
         .expect("test setup should allow updating approval policy");
     let mut config = (*turn_context.config).clone();
     config.chatgpt_base_url = server.uri();
-    config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
     config.approvals_reviewer = ApprovalsReviewer::AutoReview;
     let config = Arc::new(config);
-    let models_manager = models_manager_with_provider(
-        config.codex_home.to_path_buf(),
-        Arc::clone(&session.services.auth_manager),
-        config.model_provider.clone(),
-    );
-    session.services.models_manager = models_manager;
     turn_context.config = Arc::clone(&config);
-    turn_context.provider = create_model_provider(
-        config.model_provider.clone(),
-        turn_context.auth_manager.clone(),
-    );
     let mut runtime_permissions = turn_context.runtime_permissions();
     runtime_permissions.approval_policy = AskForApproval::OnRequest;
     runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
@@ -3138,9 +3047,5 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
     )
     .await;
 
-    assert_eq!(decision, Some(McpToolApprovalDecision::Accept));
-    assert_eq!(
-        guardian_request_log.single_request().path(),
-        "/v1/responses"
-    );
+    assert_eq!(decision, None);
 }
