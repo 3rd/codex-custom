@@ -52,7 +52,6 @@ use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
-use codex_thread_store::LocalThreadStoreConfig;
 use codex_thread_store::ThreadPersistenceMetadata;
 use tracing::Span;
 

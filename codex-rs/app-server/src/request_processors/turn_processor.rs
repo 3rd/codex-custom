@@ -91,6 +91,16 @@ impl TurnRequestProcessor {
             .map(|response| response.map(Into::into))
     }
 
+    pub(crate) async fn turn_context_update(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: TurnContextUpdateParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.turn_context_update_inner(request_id, params)
+            .await
+            .map(|response| Some(response.into()))
+    }
+
     pub(crate) async fn thread_realtime_start(
         &self,
         request_id: &ConnectionRequestId,
@@ -661,6 +671,55 @@ impl TurnRequestProcessor {
                 error
             })?;
         Ok(TurnSteerResponse { turn_id })
+    }
+
+    async fn turn_context_update_inner(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: TurnContextUpdateParams,
+    ) -> Result<TurnContextUpdateResponse, JSONRPCErrorError> {
+        let (_, thread) = self.load_thread(&params.thread_id).await?;
+        let collaboration_mode = params
+            .collaboration_mode
+            .map(|mode| self.normalize_turn_start_collaboration_mode(mode));
+        let has_any_overrides = params.cwd.is_some()
+            || params.approval_policy.is_some()
+            || params.approvals_reviewer.is_some()
+            || params.sandbox_policy.is_some()
+            || params.permission_profile.is_some()
+            || params.model.is_some()
+            || params.service_tier.is_some()
+            || params.effort.is_some()
+            || params.summary.is_some()
+            || collaboration_mode.is_some()
+            || params.personality.is_some();
+
+        if has_any_overrides {
+            self.submit_core_op(
+                request_id,
+                thread.as_ref(),
+                Op::OverrideTurnContext {
+                    cwd: params.cwd,
+                    approval_policy: params.approval_policy.map(AskForApproval::to_core),
+                    approvals_reviewer: params
+                        .approvals_reviewer
+                        .map(codex_app_server_protocol::ApprovalsReviewer::to_core),
+                    sandbox_policy: params.sandbox_policy.map(|p| p.to_core()),
+                    permission_profile: params.permission_profile.map(Into::into),
+                    windows_sandbox_level: None,
+                    model: params.model,
+                    effort: params.effort,
+                    summary: params.summary,
+                    service_tier: params.service_tier,
+                    collaboration_mode,
+                    personality: params.personality,
+                },
+            )
+            .await
+            .map_err(|err| internal_error(format!("failed to update turn context: {err}")))?;
+        }
+
+        Ok(TurnContextUpdateResponse {})
     }
 
     async fn prepare_realtime_conversation_thread(

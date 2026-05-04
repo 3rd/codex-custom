@@ -23,7 +23,6 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::FileSystemSandboxPolicy;
-use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::NetworkSandboxPolicy;
 use codex_protocol::protocol::SandboxPolicy;
 use core_test_support::PathExt;
@@ -2739,7 +2738,7 @@ async fn custom_auto_mode_skips_approval_when_annotations_have_no_hints_in_on_re
 }
 
 #[tokio::test]
-async fn approve_mode_skips_arc_interrupt_for_model() {
+async fn approve_mode_blocks_arc_interrupt_for_model() {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -2760,7 +2759,7 @@ async fn approve_mode_skips_arc_interrupt_for_model() {
                 "why": "high-risk action",
             }],
         })))
-        .expect(0)
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -2802,11 +2801,14 @@ async fn approve_mode_skips_arc_interrupt_for_model() {
     )
     .await;
 
-    assert_eq!(decision, None);
+    let Some(McpToolApprovalDecision::BlockedBySafetyMonitor(message)) = decision else {
+        panic!("approve mode should block when ARC steers the model");
+    };
+    assert!(message.contains("high-risk action"));
 }
 
 #[tokio::test]
-async fn custom_approve_mode_skips_arc_interrupt_for_model() {
+async fn custom_approve_mode_blocks_arc_interrupt_for_model() {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -2827,7 +2829,7 @@ async fn custom_approve_mode_skips_arc_interrupt_for_model() {
                 "why": "high-risk action",
             }],
         })))
-        .expect(0)
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -2869,11 +2871,14 @@ async fn custom_approve_mode_skips_arc_interrupt_for_model() {
     )
     .await;
 
-    assert_eq!(decision, None);
+    let Some(McpToolApprovalDecision::BlockedBySafetyMonitor(message)) = decision else {
+        panic!("custom approve mode should block when ARC steers the model");
+    };
+    assert!(message.contains("high-risk action"));
 }
 
 #[tokio::test]
-async fn approve_mode_skips_arc_interrupt_without_annotations() {
+async fn approve_mode_blocks_arc_interrupt_without_annotations() {
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -2894,7 +2899,7 @@ async fn approve_mode_skips_arc_interrupt_without_annotations() {
                 "why": "high-risk action",
             }],
         })))
-        .expect(0)
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -2936,7 +2941,10 @@ async fn approve_mode_skips_arc_interrupt_without_annotations() {
     )
     .await;
 
-    assert_eq!(decision, None);
+    let Some(McpToolApprovalDecision::BlockedBySafetyMonitor(message)) = decision else {
+        panic!("approve mode should block when ARC steers the model");
+    };
+    assert!(message.contains("high-risk action"));
 }
 
 #[tokio::test]
@@ -3029,19 +3037,31 @@ async fn full_access_mode_skips_arc_monitor_for_all_approval_modes() {
 }
 
 #[tokio::test]
-async fn approve_mode_skips_arc_and_guardian_in_every_permission_mode() {
+async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_enabled() {
     use wiremock::Mock;
     use wiremock::ResponseTemplate;
     use wiremock::matchers::method;
     use wiremock::matchers::path;
 
     let server = start_mock_server().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/responses"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0)
-        .mount(&server)
-        .await;
+    let guardian_request_log = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-guardian"),
+            ev_assistant_message(
+                "msg-guardian",
+                &serde_json::json!({
+                    "risk_level": "low",
+                    "user_authorization": "high",
+                    "outcome": "allow",
+                    "rationale": "The user already configured guardian to review escalated approvals for this session.",
+                })
+                .to_string(),
+            ),
+            ev_completed("resp-guardian"),
+        ]),
+    )
+    .await;
     Mock::given(method("POST"))
         .and(path("/codex/safety/arc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -3055,10 +3075,41 @@ async fn approve_mode_skips_arc_and_guardian_in_every_permission_mode() {
                 "why": "requires review",
             }],
         })))
-        .expect(0)
+        .expect(1)
         .mount(&server)
         .await;
 
+    let (mut session, mut turn_context) = make_session_and_context().await;
+    turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
+        codex_login::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+    ));
+    turn_context
+        .approval_policy
+        .set(AskForApproval::OnRequest)
+        .expect("test setup should allow updating approval policy");
+    let mut config = (*turn_context.config).clone();
+    config.chatgpt_base_url = server.uri();
+    config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
+    config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    let config = Arc::new(config);
+    let models_manager = models_manager_with_provider(
+        config.codex_home.to_path_buf(),
+        Arc::clone(&session.services.auth_manager),
+        config.model_provider.clone(),
+    );
+    session.services.models_manager = models_manager;
+    turn_context.config = Arc::clone(&config);
+    turn_context.provider = create_model_provider(
+        config.model_provider.clone(),
+        turn_context.auth_manager.clone(),
+    );
+    let mut runtime_permissions = turn_context.runtime_permissions();
+    runtime_permissions.approval_policy = AskForApproval::OnRequest;
+    runtime_permissions.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn_context.replace_runtime_permissions(runtime_permissions);
+
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
     let invocation = McpInvocation {
         server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
         tool: "dangerous_tool".to_string(),
@@ -3076,57 +3127,20 @@ async fn approve_mode_skips_arc_and_guardian_in_every_permission_mode() {
         openai_file_input_params: None,
     };
 
-    for approval_policy in [
-        AskForApproval::UnlessTrusted,
-        AskForApproval::OnFailure,
-        AskForApproval::OnRequest,
-        AskForApproval::Granular(GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            skill_approval: true,
-            request_permissions: true,
-            mcp_elicitations: true,
-        }),
-        AskForApproval::Never,
-    ] {
-        let (mut session, mut turn_context) = make_session_and_context().await;
-        turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
-            codex_login::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
-        ));
-        turn_context
-            .approval_policy
-            .set(approval_policy)
-            .expect("test setup should allow updating approval policy");
-        let mut config = (*turn_context.config).clone();
-        config.chatgpt_base_url = server.uri();
-        config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
-        config.approvals_reviewer = ApprovalsReviewer::User;
-        let config = Arc::new(config);
-        let models_manager = models_manager_with_provider(
-            config.codex_home.to_path_buf(),
-            Arc::clone(&session.services.auth_manager),
-            config.model_provider.clone(),
-        );
-        session.services.models_manager = models_manager;
-        turn_context.config = Arc::clone(&config);
-        turn_context.provider = create_model_provider(
-            config.model_provider.clone(),
-            turn_context.auth_manager.clone(),
-        );
+    let decision = maybe_request_mcp_tool_approval(
+        &session,
+        &turn_context,
+        "call-3",
+        &invocation,
+        "mcp__test__tool",
+        Some(&metadata),
+        AppToolApproval::Approve,
+    )
+    .await;
 
-        let session = Arc::new(session);
-        let turn_context = Arc::new(turn_context);
-        let decision = maybe_request_mcp_tool_approval(
-            &session,
-            &turn_context,
-            "call-3",
-            &invocation,
-            "mcp__test__tool",
-            Some(&metadata),
-            AppToolApproval::Approve,
-        )
-        .await;
-
-        assert_eq!(decision, None);
-    }
+    assert_eq!(decision, Some(McpToolApprovalDecision::Accept));
+    assert_eq!(
+        guardian_request_log.single_request().path(),
+        "/v1/responses"
+    );
 }
