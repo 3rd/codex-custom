@@ -3,9 +3,27 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+fn use_isolated_project_cwd(chat: &mut ChatWidget) {
+    let root = tempfile::Builder::new()
+        .prefix("chatwidget-project-")
+        .tempdir()
+        .expect("tempdir")
+        .keep();
+    let cwd = root.join("project");
+    std::fs::create_dir_all(&cwd).expect("create project cwd");
+    let cwd = cwd.abs();
+    chat.config.cwd = cwd.clone();
+    chat.current_cwd = Some(cwd.to_path_buf());
+    chat.status_line_project_root_name_cache = Some(CachedProjectRootName {
+        cwd: cwd.to_path_buf(),
+        root_name: None,
+    });
+}
+
 #[tokio::test]
 async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.bottom_pane.set_task_running(/*running*/ true);
     chat.refresh_terminal_title();
 
@@ -47,6 +65,7 @@ async fn terminal_title_shows_action_required_while_exec_approval_is_pending() {
 #[tokio::test]
 async fn terminal_title_action_required_respects_spinner_setting() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.config.tui_terminal_title = Some(vec!["project".to_string()]);
     chat.bottom_pane.set_task_running(/*running*/ true);
     chat.refresh_terminal_title();
@@ -75,6 +94,7 @@ async fn terminal_title_action_required_respects_spinner_setting() {
 #[tokio::test]
 async fn terminal_title_action_required_blinks_when_animations_are_enabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.bottom_pane.set_task_running(/*running*/ true);
     chat.terminal_title_animation_origin = Instant::now() - std::time::Duration::from_millis(1500);
     chat.refresh_terminal_title();
@@ -106,6 +126,7 @@ async fn terminal_title_action_required_blinks_when_animations_are_enabled() {
 #[tokio::test]
 async fn terminal_title_activity_indicators_do_not_animate_when_animations_are_disabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.config.animations = false;
     chat.bottom_pane.set_task_running(/*running*/ true);
     chat.terminal_title_animation_origin = Instant::now() - std::time::Duration::from_millis(1500);

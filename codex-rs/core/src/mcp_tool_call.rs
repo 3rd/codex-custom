@@ -1095,23 +1095,6 @@ pub(crate) const MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION: &str = "Allow for this se
 pub(crate) const MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC: &str = "__codex_mcp_decline__";
 const MCP_TOOL_APPROVAL_ACCEPT_AND_REMEMBER: &str = "Allow and don't ask me again";
 const MCP_TOOL_APPROVAL_CANCEL: &str = "Cancel";
-const MCP_TOOL_APPROVAL_KIND_KEY: &str = "codex_approval_kind";
-const MCP_TOOL_APPROVAL_KIND_MCP_TOOL_CALL: &str = "mcp_tool_call";
-const MCP_TOOL_APPROVAL_PERSIST_KEY: &str = "persist";
-const MCP_TOOL_APPROVAL_PERSIST_SESSION: &str = "session";
-const MCP_TOOL_APPROVAL_PERSIST_ALWAYS: &str = "always";
-const MCP_TOOL_APPROVAL_SOURCE_KEY: &str = "source";
-const MCP_TOOL_APPROVAL_SOURCE_CONNECTOR: &str = "connector";
-const MCP_TOOL_APPROVAL_CONNECTOR_ID_KEY: &str = "connector_id";
-const MCP_TOOL_APPROVAL_CONNECTOR_NAME_KEY: &str = "connector_name";
-const MCP_TOOL_APPROVAL_CONNECTOR_DESCRIPTION_KEY: &str = "connector_description";
-const MCP_TOOL_APPROVAL_TOOL_TITLE_KEY: &str = "tool_title";
-const MCP_TOOL_APPROVAL_TOOL_DESCRIPTION_KEY: &str = "tool_description";
-const MCP_TOOL_APPROVAL_TOOL_PARAMS_KEY: &str = "tool_params";
-const MCP_TOOL_APPROVAL_TOOL_PARAMS_DISPLAY_KEY: &str = "tool_params_display";
-const MCP_TOOL_CALL_ARC_MONITOR_CALLSITE_DEFAULT: &str = "mcp_tool_call__default";
-const MCP_TOOL_CALL_ARC_MONITOR_CALLSITE_ALWAYS_ALLOW: &str = "mcp_tool_call__always_allow";
-
 pub(crate) fn is_mcp_tool_approval_question_id(question_id: &str) -> bool {
     question_id
         .strip_prefix(MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX)

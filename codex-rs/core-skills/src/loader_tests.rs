@@ -363,6 +363,7 @@ async fn loads_repo_skills_from_claude_dir_when_agents_dir_is_missing() {
             policy: None,
             path_to_skills_md: normalized(&skill_path),
             scope: SkillScope::Repo,
+            plugin_id: None,
         }]
     );
 }
@@ -407,6 +408,7 @@ async fn repo_agents_skills_beat_claude_fallback() {
             policy: None,
             path_to_skills_md: normalized(&agents_skill_path),
             scope: SkillScope::Repo,
+            plugin_id: None,
         }]
     );
 }

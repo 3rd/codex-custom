@@ -58,6 +58,23 @@ fn cache_project_root(chat: &mut ChatWidget, root_name: &str) {
     });
 }
 
+fn use_isolated_project_cwd(chat: &mut ChatWidget) {
+    let root = tempfile::Builder::new()
+        .prefix("chatwidget-project-")
+        .tempdir()
+        .expect("tempdir")
+        .keep();
+    let cwd = root.join("project");
+    std::fs::create_dir_all(&cwd).expect("create project cwd");
+    let cwd = cwd.abs();
+    chat.config.cwd = cwd.clone();
+    chat.current_cwd = Some(cwd.to_path_buf());
+    chat.status_line_project_root_name_cache = Some(CachedProjectRootName {
+        cwd: cwd.to_path_buf(),
+        root_name: None,
+    });
+}
+
 #[tokio::test]
 async fn status_surface_preview_lines_live_only_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -105,6 +122,7 @@ async fn status_line_setup_popup_live_only_snapshot() {
 #[tokio::test]
 async fn status_surface_preview_lines_hardcoded_only_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
 
     let snapshot = combined_preview_snapshot(
         &mut chat,
@@ -126,6 +144,7 @@ async fn status_surface_preview_lines_hardcoded_only_snapshot() {
 #[tokio::test]
 async fn status_line_setup_popup_hardcoded_only_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.config.tui_status_line = Some(vec![
         "project-name".to_string(),
         "git-branch".to_string(),
@@ -141,6 +160,7 @@ async fn status_line_setup_popup_hardcoded_only_snapshot() {
 #[tokio::test]
 async fn status_surface_preview_lines_mixed_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.status_line_branch = Some("feature/mixed-preview".to_string());
     chat.thread_name = Some("Mixed preview thread".to_string());
 
@@ -164,6 +184,7 @@ async fn status_surface_preview_lines_mixed_snapshot() {
 #[tokio::test]
 async fn status_line_setup_popup_mixed_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.status_line_branch = Some("feature/mixed-preview".to_string());
     chat.thread_name = Some("Mixed preview thread".to_string());
     chat.config.tui_status_line = Some(vec![
@@ -216,6 +237,7 @@ async fn terminal_title_setup_popup_hardcoded_only_snapshot() {
 #[tokio::test]
 async fn terminal_title_setup_popup_mixed_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
     chat.thread_name = Some("Mixed preview thread".to_string());
     chat.config.tui_terminal_title = Some(vec![
         "project-name".to_string(),
@@ -232,6 +254,7 @@ async fn terminal_title_setup_popup_mixed_snapshot() {
 #[tokio::test]
 async fn missing_project_root_uses_different_status_and_title_preview_sources() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    use_isolated_project_cwd(&mut chat);
 
     let status_preview = status_preview_line(&mut chat, &[StatusLineItem::ProjectRoot]);
     let title_preview = title_preview_line(&mut chat, &[TerminalTitleItem::Project]);

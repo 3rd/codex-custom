@@ -362,6 +362,7 @@ async fn repo_agents_skill_roots(
                     path: agents_skills,
                     scope: SkillScope::Repo,
                     file_system: Arc::clone(&fs),
+                    plugin_id: None,
                 });
                 found_agents_skills = true;
             }

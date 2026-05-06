@@ -4,49 +4,9 @@
 import type { Personality } from "../Personality";
 import type { ReasoningEffort } from "../ReasoningEffort";
 import type { ReasoningSummary } from "../ReasoningSummary";
-import type { ServiceTier } from "../ServiceTier";
 import type { ApprovalsReviewer } from "./ApprovalsReviewer";
 import type { AskForApproval } from "./AskForApproval";
 import type { PermissionProfile } from "./PermissionProfile";
 import type { SandboxPolicy } from "./SandboxPolicy";
 
-export type TurnContextUpdateParams = {threadId: string, /**
- * Override the working directory for the current turn, if any, and
- * subsequent turns.
- */
-cwd?: string | null, /**
- * Override the approval policy for the current turn, if any, and
- * subsequent turns.
- */
-approvalPolicy?: AskForApproval | null, /**
- * Override where approval requests are routed for review on the current
- * turn, if any, and subsequent turns.
- */
-approvalsReviewer?: ApprovalsReviewer | null, /**
- * Override the sandbox policy for the current turn, if any, and
- * subsequent turns.
- */
-sandboxPolicy?: SandboxPolicy | null, /**
- * Override the permission profile for the current turn, if any, and
- * subsequent turns.
- */
-permissionProfile?: PermissionProfile | null, /**
- * Override the model for the current turn, if any, and subsequent turns.
- */
-model?: string | null, /**
- * Override the service tier for the current turn, if any, and subsequent
- * turns.
- */
-serviceTier?: ServiceTier | null | null, /**
- * Override the reasoning effort for the current turn, if any, and
- * subsequent turns.
- */
-effort?: ReasoningEffort | null | null, /**
- * Override the reasoning summary for the current turn, if any, and
- * subsequent turns.
- */
-summary?: ReasoningSummary | null, /**
- * Override the personality for the current turn, if any, and subsequent
- * turns.
- */
-personality?: Personality | null};
+export type TurnContextUpdateParams = {threadId: string, cwd?: string | null, approvalPolicy?: AskForApproval | null, approvalsReviewer?: ApprovalsReviewer | null, sandboxPolicy?: SandboxPolicy | null, permissionProfile?: PermissionProfile | null, model?: string | null, serviceTier?: string | null | null, effort?: ReasoningEffort | null | null, summary?: ReasoningSummary | null, personality?: Personality | null};

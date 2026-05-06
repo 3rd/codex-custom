@@ -23,6 +23,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::FileSystemSandboxPolicy;
+use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::NetworkSandboxPolicy;
 use codex_protocol::protocol::SandboxPolicy;
 use core_test_support::PathExt;

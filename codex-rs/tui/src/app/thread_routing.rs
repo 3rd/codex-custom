@@ -792,7 +792,7 @@ impl App {
                         sandbox_policy: (*sandbox_policy).clone().map(Into::into),
                         permission_profile: (*permission_profile).clone().map(Into::into),
                         model: (*model).clone(),
-                        service_tier: (*service_tier),
+                        service_tier: service_tier.clone(),
                         effort: *effort,
                         summary: (*summary),
                         personality: (*personality),

@@ -41,9 +41,11 @@ pub(crate) enum AppCommand {
     RunUserShellCommand {
         command: String,
     },
+    #[allow(dead_code)]
     AddToHistory {
         text: String,
     },
+    #[allow(dead_code)]
     GetHistoryEntryRequest {
         offset: usize,
         log_id: u64,
@@ -150,7 +152,7 @@ pub(crate) enum AppCommandView<'a> {
         model: &'a str,
         effort: Option<ReasoningEffortConfig>,
         summary: &'a Option<ReasoningSummaryConfig>,
-        service_tier: &'a Option<Option<ServiceTier>>,
+        service_tier: &'a Option<Option<String>>,
         final_output_json_schema: &'a Option<Value>,
         collaboration_mode: &'a Option<CollaborationMode>,
         personality: &'a Option<Personality>,
@@ -165,7 +167,7 @@ pub(crate) enum AppCommandView<'a> {
         model: &'a Option<String>,
         effort: &'a Option<Option<ReasoningEffortConfig>>,
         summary: &'a Option<ReasoningSummaryConfig>,
-        service_tier: &'a Option<Option<ServiceTier>>,
+        service_tier: &'a Option<Option<String>>,
         collaboration_mode: &'a Option<CollaborationMode>,
         personality: &'a Option<Personality>,
     },
@@ -360,10 +362,12 @@ impl AppCommand {
         Self::SetThreadName { name }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn add_to_history(text: String) -> Self {
         Self::AddToHistory { text }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn history_lookup(offset: usize, log_id: u64) -> Self {
         Self::GetHistoryEntryRequest { offset, log_id }
     }
@@ -391,9 +395,11 @@ impl AppCommand {
             Self::RealtimeConversationText(params) => Op::RealtimeConversationText(params),
             Self::RealtimeConversationClose => Op::RealtimeConversationClose,
             Self::RunUserShellCommand { command } => Op::RunUserShellCommand { command },
-            Self::AddToHistory { text } => Op::AddToHistory { text },
-            Self::GetHistoryEntryRequest { offset, log_id } => {
-                Op::GetHistoryEntryRequest { offset, log_id }
+            Self::AddToHistory { .. }
+            | Self::GetHistoryEntryRequest { .. }
+            | Self::ListSkills { .. }
+            | Self::SetThreadName { .. } => {
+                unreachable!("app-local command cannot be converted to core op")
             }
             Self::UserTurn {
                 items,
@@ -496,9 +502,7 @@ impl AppCommand {
                 Op::RequestPermissionsResponse { id, response }
             }
             Self::ReloadUserConfig => Op::ReloadUserConfig,
-            Self::ListSkills { cwds, force_reload } => Op::ListSkills { cwds, force_reload },
             Self::Compact => Op::Compact,
-            Self::SetThreadName { name } => Op::SetThreadName { name },
             Self::Shutdown => Op::Shutdown,
             Self::ThreadRollback { num_turns } => Op::ThreadRollback { num_turns },
             Self::Review { review_request } => Op::Review { review_request },
@@ -652,10 +656,6 @@ impl From<Op> for AppCommand {
             Op::RealtimeConversationText(params) => Self::RealtimeConversationText(params),
             Op::RealtimeConversationClose => Self::RealtimeConversationClose,
             Op::RunUserShellCommand { command } => Self::RunUserShellCommand { command },
-            Op::AddToHistory { text } => Self::AddToHistory { text },
-            Op::GetHistoryEntryRequest { offset, log_id } => {
-                Self::GetHistoryEntryRequest { offset, log_id }
-            }
             Op::UserTurn {
                 items,
                 environments,
@@ -771,9 +771,7 @@ impl From<Op> for AppCommand {
                 Self::RequestPermissionsResponse { id, response }
             }
             Op::ReloadUserConfig => Self::ReloadUserConfig,
-            Op::ListSkills { cwds, force_reload } => Self::ListSkills { cwds, force_reload },
             Op::Compact => Self::Compact,
-            Op::SetThreadName { name } => Self::SetThreadName { name },
             Op::Shutdown => Self::Shutdown,
             Op::ThreadRollback { num_turns } => Self::ThreadRollback { num_turns },
             Op::Review { review_request } => Self::Review { review_request },
