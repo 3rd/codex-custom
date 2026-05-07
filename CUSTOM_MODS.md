@@ -17,12 +17,12 @@ Before adapting a mod, read the matching entry, inspect current upstream ownersh
 ## MCP Approval Compatibility
 
 - Mod ID: `mcp-approval-compat`
-- Current commits: `4876328d1`, current `fix(custom): bypass guardian for approved mcp tools` top commit
-- Behavior contract: non-`codex_apps` MCP tools in auto approval mode skip the default prompt when tool annotations are missing or all approval hints are unset. MCP tools with configured `approval_mode = "approve"` bypass MCP approval prompts and guardian/ARC review because the user has explicitly pre-approved that tool. In danger/full-access mode, MCP approval prompts auto-approve unless the tool is explicitly disabled or denied by config.
+- Current commits: pending, updates `4876328d1`
+- Behavior contract: non-`codex_apps` MCP tools in auto approval mode require approval under normal `on-request` policy when tool annotations are missing or all approval hints are unset. MCP tools with configured `approval_mode = "approve"` bypass MCP approval prompts and guardian/ARC review because the user has explicitly pre-approved that tool. In danger/full-access mode, MCP approval prompts auto-approve unless the tool is explicitly disabled or denied by config.
 - Owner areas: `codex-rs/core/src/mcp_tool_call.rs`, `codex-rs/core/src/mcp_tool_call_tests.rs`, `codex-rs/core/src/guardian/mod.rs`, `codex-rs/core/src/lib.rs`, `codex-rs/codex-mcp/src/mcp/mod.rs`
 - Targeted checks: `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-core mcp_tool_call'`, `nix develop . --command bash -lc 'cd codex-rs && cargo test -p codex-mcp mcp_prompt_auto_approval'`
-- Adaptation notes: preserve compatibility with local MCP servers that do not emit full annotations. Re-check upstream MCP approval semantics before replaying old code.
-- Retirement criteria: upstream implements equivalent behavior for unannotated local MCP tools.
+- Adaptation notes: preserve explicit per-tool approval overrides for trusted local MCP servers that do not emit full annotations. Re-check upstream MCP approval semantics before replaying old code.
+- Retirement criteria: upstream implements equivalent explicit per-tool approval overrides and danger/full-access MCP approval behavior.
 
 ## Danger Mode TUI
 

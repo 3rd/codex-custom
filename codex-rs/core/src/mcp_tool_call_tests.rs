@@ -2588,7 +2588,7 @@ async fn prompt_mode_waits_for_approval_when_annotations_do_not_require_approval
 }
 
 #[tokio::test]
-async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_never_mode() {
+async fn custom_auto_mode_declines_when_annotations_are_missing_in_never_mode() {
     let (session, mut turn_context) = make_session_and_context().await;
     turn_context
         .approval_policy
@@ -2612,11 +2612,14 @@ async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_never_m
     )
     .await;
 
-    assert_eq!(decision, None);
+    assert_eq!(
+        decision,
+        Some(McpToolApprovalDecision::Decline { message: None })
+    );
 }
 
 #[tokio::test]
-async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_on_request_mode() {
+async fn custom_auto_mode_prompts_when_annotations_are_missing_in_on_request_mode() {
     let (session, turn_context, _rx_event) = make_session_and_context_with_rx().await;
     {
         let mut active_turn = session.active_turn.lock().await;
@@ -2641,16 +2644,17 @@ async fn custom_auto_mode_skips_approval_when_annotations_are_missing_in_on_requ
         })
     };
 
-    let decision = tokio::time::timeout(std::time::Duration::from_millis(200), &mut approval_task)
-        .await
-        .expect("custom MCP tools should not wait for approval when annotations are missing")
-        .expect("approval task should complete successfully");
-
-    assert_eq!(decision, None);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(200), &mut approval_task)
+            .await
+            .is_err(),
+        "on-request mode should wait for approval instead of auto-allowing"
+    );
+    approval_task.abort();
 }
 
 #[tokio::test]
-async fn custom_auto_mode_skips_approval_when_annotations_have_no_hints_in_on_request_mode() {
+async fn custom_auto_mode_prompts_when_annotations_have_no_hints_in_on_request_mode() {
     let (session, turn_context, _rx_event) = make_session_and_context_with_rx().await;
     {
         let mut active_turn = session.active_turn.lock().await;
@@ -2676,12 +2680,13 @@ async fn custom_auto_mode_skips_approval_when_annotations_have_no_hints_in_on_re
         })
     };
 
-    let decision = tokio::time::timeout(std::time::Duration::from_millis(200), &mut approval_task)
-        .await
-        .expect("custom MCP tools with empty annotations should not wait for approval")
-        .expect("approval task should complete successfully");
-
-    assert_eq!(decision, None);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(200), &mut approval_task)
+            .await
+            .is_err(),
+        "on-request mode should wait for approval instead of auto-allowing"
+    );
+    approval_task.abort();
 }
 
 #[tokio::test]

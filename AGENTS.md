@@ -18,9 +18,9 @@ This checkout is not a generic `codex` clone. It is a fork workspace for carryin
 - `codex-rs/Cargo.toml` defines `profile.local-release` specifically for this fork. It keeps release settings but disables LTO and raises codegen units to speed up local custom builds.
 - `flake.nix` adds `libcap` to the dev shell. Prefer the Nix shell for local Linux sandbox builds instead of relying on host packages.
 - Current fork-only behavior lives in `codex-rs/core/src/mcp_tool_call.rs`:
-  - Non-`codex_apps` MCP tools in `approval_mode = "auto"` skip the default approval prompt when tool annotations are missing, or when all three approval hints (`destructive_hint`, `read_only_hint`, `open_world_hint`) are unset.
+  - Non-`codex_apps` MCP tools in `approval_mode = "auto"` require approval under normal `on-request` policy when tool annotations are missing, or when all three approval hints (`destructive_hint`, `read_only_hint`, `open_world_hint`) are unset.
   - MCP tools configured with `approval_mode = "approve"` bypass MCP approval prompts and guardian/ARC review because the user has explicitly pre-approved that tool.
-  - This patch exists to keep custom/local MCP servers usable even when they do not emit full tool annotations.
+  - This patch preserves explicit per-tool approval overrides for custom/local MCP servers that do not emit full tool annotations.
   - Danger/full-access mode auto-approves MCP approval prompts unless the tool is explicitly disabled or denied by config.
 - Current fork-only shell approval normalization lives in:
   - `codex-rs/shell-command/src/bash.rs`
